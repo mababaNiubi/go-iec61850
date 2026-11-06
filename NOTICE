@@ -1,0 +1,14 @@
+This project is licensed under GPL-3.0-or-later.
+
+Protocol layouts and interoperability behavior were developed with reference to
+libiec61850 by Michael Zillgith / MZ Automation GmbH, released under GPLv3 or later.
+Reference version: v1.6.2.1
+Reference commit: 6e7a603c771d6124cd3cafea7ec38b7e0f2e7aaf
+Upstream: https://github.com/mz-automation/libiec61850
+
+The production Go implementation uses no C library or cgo. The original C
+implementation is built separately for interoperability testing only. Upstream
+copyright notices and licenses remain in the reference source tree.
+
+Downloaded standards in _local/standards are separate reference materials. They
+retain their publishers' copyright and are not covered by this software license.
