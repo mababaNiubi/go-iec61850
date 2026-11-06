@@ -1,33 +1,37 @@
-# 平台接入与已知边界
+# Platform support and known limits
 
-协议核心为纯Go。MMS使用TCP；GOOSE/SV使用Ethernet，127.0.0.1不能代替二层测试。
+English | [简体中文](platforms.zh-CN.md)
 
-| 平台 | 接入 | 要求 |
+The protocol core is pure Go. MMS uses TCP; GOOSE/SV use Ethernet, so TCP loopback cannot replace Layer 2 testing.
+
+| Platform | Access method | Requirements |
 |---|---|---|
-| Windows amd64 | Npcap DLL运行时调用，无cgo | 安装可访问的Npcap驱动/DLL；接口必须是Ethernet |
-| Linux | 非阻塞AF_PACKET/SOCK_RAW | CAP_NET_RAW或相应权限；显式接口名 |
-| 其他未支持平台 | 返回ErrUnsupported | 可自行提供FrameIO接入协议状态机 |
+| Windows amd64 | Runtime Npcap DLL calls without cgo | Accessible Npcap driver/DLL and an Ethernet interface |
+| Linux | Nonblocking AF_PACKET/SOCK_RAW | `CAP_NET_RAW` or equivalent permissions and an explicit interface name |
+| Other unsupported platforms | `ErrUnsupported` | Supply a custom `FrameIO` to use the protocol state machines |
 
-Ethernet.Open不自动选择网卡。Windows接受Npcap名称、完整描述或列表索引；Linux接受接口名。Loopback的链路类型不适用于GOOSE/SV，程序会拒绝。用各订阅示例的 `-list` 查看接口。
+`ethernet.Open` requires an explicit interface. Windows accepts an Npcap name, full description, or list index; Linux accepts an interface name. Non-Ethernet link types such as loopback are rejected. Use `-list` on a GOOSE/SV command-line tool to inspect interfaces.
 
-## Windows组播投递
+## Windows multicast delivery
 
-非混杂捕获不等于已经加入目标组播地址表。部分接口在该模式下不会投递IEC61850组播；本项目的跨虚拟机测试中曾实际遇到。可在专用接口上显式使用 `-promiscuous`，库中对应 `ethernet.Config{Promiscuous: true}`。协议和VLAN过滤仍然生效。
+Non-promiscuous capture does not automatically register the target multicast group in the interface's receive table. Some interfaces do not deliver IEC 61850 multicast in that mode; this occurred in earlier cross-VM runs. Explicitly use `-promiscuous` on a dedicated interface when required, or set `ethernet.Config{Promiscuous: true}`. Protocol and VLAN filtering still applies.
 
-## VLAN字节保真
+## VLAN byte fidelity
 
-编解码器保留PCP、DEI和完整VID。Linux接入使用PACKET_AUXDATA重建被内核/设备剥离的标签，但只能使用操作系统实际提供的信息。
+The codecs retain PCP, DEI, and the full VID. Linux access uses `PACKET_AUXDATA` to restore tags stripped by the kernel/device, but it can only restore metadata actually supplied by the operating system.
 
-- 旧4.19内核的测试接收路径将DEI1清除，独立原始socket探针同样观察到；不能从丢失后的元数据推断原位。
-- 一条Windows→虚拟机链路将发送PCP4变成接收PCP0；反向保留PCP4。该变化不能由协议解码器恢复。
-- Linux veth的DEI0测试严格保留高PCP和高VID；DEI1作为独立能力探针，默认严格检查。只有显式设置 `ETHERNET_LIVE_ALLOW_DEI_LOSS=1` 且其他字节完全一致时，已知DEI-only差异才记为SKIP。
+- On a previously exercised 4.19 kernel receive path, DEI 1 was cleared. An independent raw-socket probe observed the same result; the missing original bit cannot be inferred afterward.
+- One Windows-to-VM path changed transmitted PCP 4 to received PCP 0, while the reverse direction retained PCP 4. Protocol decoding cannot restore metadata lost along the path.
+- Linux veth checks with DEI 0 strictly retained high PCP and VID values. DEI 1 is a separate capability probe with strict checks by default. Only when `ETHERNET_LIVE_ALLOW_DEI_LOSS=1` is explicitly set and all other bytes match is the known DEI-only difference recorded as SKIP.
 
-因此，协议互通通过不等同于所有VLAN字段在指定硬件链路中都保真。部署时应比较两端抓包和操作系统元数据。历史原始证据保存在本地 `_local/reports/`。
+Successful protocol interoperability does not establish fidelity for every VLAN field on a particular hardware path. Compare captures and OS metadata at both ends when deploying. Historical raw evidence remains in ignored `_local/reports/`.
 
-## 调度、同步与关闭
+## Scheduling, synchronization, and shutdown
 
-GOOSE按配置重传并使用TAL；SV按软件时间槽发送，迟到时跳过过期槽并推进计数。Go调度、系统负载、驱动和网卡会影响延迟，库没有保护级硬实时承诺。
+GOOSE retransmits according to configuration and uses TAL. SV sends on software time slots, skips expired slots when late, and advances sample counters. Go scheduling, system load, drivers, and NICs affect latency. The library makes no protection-grade hard real-time guarantee.
 
-SV示例默认报告未同步；没有建立PTP或硬件采样时钟。SampleSync、SampleRate或SampleMode只是报文字段，不会创建同步源或采样硬件。
+SV examples report unsynchronized data by default; they do not establish PTP or a hardware sampling clock. SampleSync, SampleRate, and SampleMode are metadata fields and do not create a synchronization source or acquisition hardware.
 
-原生读取使用非阻塞轮询，支持context取消和协调关闭。注入调用进入操作系统后无法安全强制中断，写入取消在调用前检查。实际时延、远端IED、物理交换机和硬件offload需要对应环境测试。
+Native reads use nonblocking polling with context cancellation and coordinated close. Once injection enters the operating system, it cannot be safely interrupted forcibly; write cancellation is checked before the call. Timing, remote IED behavior, physical switches, and hardware offload require checks in the corresponding environment.
+
+[Ethernet adapter](../ethernet/README.md) · [Command-line tools](../cmd/README.md)

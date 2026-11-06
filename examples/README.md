@@ -1,24 +1,28 @@
-# 按业务场景看示例
+# Examples by application task
 
-每个目录只讲一个场景，直接打开main.go。代码中的中文注释说明调用顺序、字段含义、错误和资源关闭；API参数详解在 [API手册](../docs/api/README.md)。
+English | [简体中文](README.zh-CN.md)
 
-| 我要学习 | 代码 | 运行 |
+Each directory demonstrates one task. Open its `main.go` to follow the API calls; use the English guide beside it for the steps and expected output. The source also contains Chinese step comments. The [API guide](../docs/api/README.md) explains parameters and return values in detail.
+
+Run all commands from the repository root.
+
+| Task | Source | Command |
 |---|---|---|
-| 连接，读一个整数，写入，再读回 | [MMS读写](mms/read-write/main.go) | `go run ./examples/mms/read-write` |
-| 批量读取、逐项失败、数组/结构选择 | [MMS批量](mms/read-batch/main.go) | `go run ./examples/mms/read-batch` |
-| 查询Domain、变量名和声明类型 | [MMS目录](mms/browse/main.go) | `go run ./examples/mms/browse` |
-| 定义、读写和删除AA命名变量表 | [MMS列表](mms/named-list/main.go) | `go run ./examples/mms/named-list` |
-| 服务端主动报告，客户端接收 | [MMS报告](mms/report/main.go) | `go run ./examples/mms/report` |
-| 发布状态false→true，并接收两个状态 | [GOOSE](goose/publish-subscribe/main.go) | `go run ./examples/goose/publish-subscribe` |
-| 更新测量值，发送两个连续采样 | [SV](sv/publish-subscribe/main.go) | `go run ./examples/sv/publish-subscribe` |
-| 按偏移组织整数、浮点、Quality和UTC | [SV布局](sv/data-layout/main.go) | `go run ./examples/sv/data-layout` |
+| Connect, read an integer, write, and read it back | [MMS read/write](mms/read-write/main.go) | `go run ./examples/mms/read-write` |
+| Batch access, partial failures, and array/structure selection | [MMS batch reads](mms/read-batch/main.go) | `go run ./examples/mms/read-batch` |
+| Discover domains, names, and declared types | [MMS browsing](mms/browse/main.go) | `go run ./examples/mms/browse` |
+| Define, write, read, and delete an AA named list | [MMS named lists](mms/named-list/main.go) | `go run ./examples/mms/named-list` |
+| Send a server-initiated report and receive it on the client | [MMS reports](mms/report/main.go) | `go run ./examples/mms/report` |
+| Publish false then true and receive both states | [GOOSE](goose/publish-subscribe/main.go) | `go run ./examples/goose/publish-subscribe` |
+| Update a measurement and send two consecutive samples | [SV](sv/publish-subscribe/main.go) | `go run ./examples/sv/publish-subscribe` |
+| Place integers, floats, Quality, and UTC at explicit offsets | [SV byte layout](sv/data-layout/main.go) | `go run ./examples/sv/data-layout` |
 
-MMS前四个示例默认自动创建回环服务，结束时关闭。加`-address 127.0.0.1:8102`可使用先启动的`go run ./cmd/mms-server`；示例依赖该服务提供的sample变量。报告示例包含本机两端。
+The first four MMS examples start and close a temporary loopback peer by default. To use the sample command-line server instead, start `go run ./cmd/mms-server`, then add `-address 127.0.0.1:8102` to the example command. These examples expect its `sample` variables. The report example includes both endpoints locally.
 
-GOOSE/SV示例用内存FrameIO来展示真实编解码和对象调用，无需网卡权限。要接真实Ethernet，查看API手册中的ethernet.Open代码，或使用 [cmd工具](../cmd/README.md)。
+GOOSE/SV examples use an in-memory `FrameIO` to exercise frame encoding, decoding, and state objects without NIC permissions. For real Ethernet, use the `ethernet.Open` snippets in the API guide or the [command-line tools](../cmd/README.md).
 
-## 代码里哪些是演示辅助
+## Example helpers
 
-`internal/mmsdemo/server.go`只创建MMS本机对端，`internal/memory/link.go`只提供内存FrameIO。业务代码不需要复制这些辅助层：保留main.go中Dial之后的调用，或把内存链路替换成网卡Conn。
+[internal/mmsdemo/server.go](internal/mmsdemo/server.go) only supplies the local MMS peer; [internal/memory/link.go](internal/memory/link.go) only supplies the in-memory link. Applications can keep the calls after `Dial`, or replace the memory link with an Ethernet `Conn`.
 
-旧的综合断言流程已从示例入口移出；协议边界和异常路径由各包的`*_test.go`验证。示例关注应用怎样调用API。
+Protocol boundary cases and error paths live in package `*_test.go` files. Examples focus on how an application uses the API.
