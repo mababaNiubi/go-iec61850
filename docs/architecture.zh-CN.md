@@ -10,6 +10,7 @@
 | MMS | mms | data、internal/iso、internal/ber |
 | 二层GOOSE | goose | data、internal/ber |
 | 二层SV | sv | internal/ber；seqData使用原始布局 |
+| 工程设备模型 | scl | encoding/xml、mms、goose、data |
 | 可选接入 | ethernet | 标准库和操作系统原始网卡API |
 | 使用示例 | examples | 公开库、共享示例模型和示例专用辅助包 |
 

@@ -10,6 +10,7 @@ The library is split by protocol. Applications can import and use MMS or a frame
 | MMS | `mms` | `data`, `internal/iso`, `internal/ber` |
 | Layer 2 GOOSE | `goose` | `data`, `internal/ber` |
 | Layer 2 SV | `sv` | `internal/ber`; raw application layout for seqData |
+| Engineered device model | `scl` | `encoding/xml`, `mms`, `goose` and `data` |
 | Optional Ethernet access | `ethernet` | Standard library and native operating-system interfaces |
 | Application examples | `examples` | Public library and example-only helpers |
 

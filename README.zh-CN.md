@@ -4,6 +4,10 @@
 
 原生Go的MMS客户端/服务端、普通二层GOOSE和SV协议库。Go1.24+，运行库无第三方Go依赖，不需要cgo。
 
+## 用 SCD 启动设备和监控
+
+从当前工作树运行 `go run ./examples/scd/breaker`，可以看到断路器 MMS 采集、闭锁、分合闸以及 GOOSE 反馈。`go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd` 可离线列出接入点。SCD 集成随 v1.1.0 发布，使用 `go get github.com/mababaNiubi/go-iec61850@v1.1.0` 安装。[SCD API 和常用路径](docs/api/scl.zh-CN.md) · [设备与监控示例](examples/scd/breaker/README.zh-CN.md)
+
 ## 我想连接设备，读写一个变量
 
 先在另一个终端启动示例对端：`go run ./cmd/mms-server -address 127.0.0.1:8102`。业务代码的主要调用如下，放在返回error的函数中执行：
@@ -46,13 +50,13 @@ go run ./examples/mms/read-write
 | 发布状态量，数据变化后更新，订阅并判断TAL失效 | [GOOSE API](docs/api/goose.zh-CN.md) |
 | 发布/订阅采样值、多ASDU、计数和字节布局 | [SV API](docs/api/sv.zh-CN.md) |
 
-[API总目录](docs/api/README.zh-CN.md) · [八个独立示例](examples/README.zh-CN.md) · [现成命令行工具](cmd/README.zh-CN.md)
+[API总目录](docs/api/README.zh-CN.md) · [应用示例](examples/README.zh-CN.md) · [现成命令行工具](cmd/README.zh-CN.md)
 
 ## 示例和工具分别在哪
 
 - `examples/`：一目录一个业务场景，每个main.go直接展示API调用和关键注释。MMS默认本机回环，其余使用内存链路，均不向真实网卡发包。
-- `cmd/`：六个命令行工具，负责参数、真实设备连接、网卡、离线帧和PCAP。
-- `mms/`、`data/`、`goose/`、`sv/`、`ethernet/`：应用实际导入的库。
+- `cmd/`：网络通信工具和离线 SCD 模型查询工具。
+- `mms/`、`data/`、`goose/`、`sv/`、`ethernet/`、`scl/`：应用实际导入的库。
 - `_local/`：被Git忽略的C对照、标准资料、报告和产物。
 
 ## 构建与验证
@@ -69,4 +73,4 @@ bash scripts/test.sh --race --examples
 
 工具输出到`_local/bin/<系统>-<架构>/`，生产构建使用CGO_ENABLED=0和trimpath。Windows真实网卡需要Npcap，Linux需要raw socket权限，详见 [平台说明](docs/platforms.zh-CN.md)。[开发与验证](docs/development.zh-CN.md) 记录本地C对照入口。
 
-当前为MMS核心和普通L2 GOOSE/SV，尚未实现完整ACSI/SCL、报告控制块、R-GOOSE/R-SV、PTP或安全扩展。软件采用 **GPL-3.0-or-later**，见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。
+当前提供 MMS 核心、普通 L2 GOOSE/SV 和[限定范围的 SCD 模型映射](docs/api/scl.zh-CN.md)，尚未实现完整ACSI/SCL、报告控制块、R-GOOSE/R-SV、PTP或安全扩展。软件采用 **GPL-3.0-or-later**，见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。

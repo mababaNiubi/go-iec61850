@@ -134,4 +134,4 @@ func PublishOnInterface(ctx context.Context, interfaceName string) error {
 
 For reception, pass the same kind of connection to `ListenEvents`. If a Windows interface does not deliver the target multicast group, explicitly set `Promiscuous: true`. Linux requires raw socket permissions. See the [command-line tools](../../cmd/README.md) and [platform notes](../platforms.md) for driver behavior, VLAN fidelity, and software scheduling limits.
 
-This package implements ordinary Layer 2 GOOSE. It does not configure GoCB/SCL, R-GOOSE, or security authentication. Restart recovery is opt-in through `AllowRestartAfterTimeout`; that policy does not provide authenticated replay protection.
+For SCD-defined GSEControl, Communication/GSE and subscriber ExtRef, use the [SCD integration API](scl.md). The `goose` package implements ordinary Layer 2 GOOSE. Restart recovery is opt-in through `AllowRestartAfterTimeout`; that policy does not provide authenticated replay protection.

@@ -26,7 +26,7 @@ bash scripts/build.sh
 GOOS=linux GOARCH=amd64 bash scripts/build.sh
 ```
 
-测试脚本保存JSON结果到 `_local/reports/unit/`。`--examples`/`-Examples`运行八个独立API示例，也可按示例路径独立运行。构建脚本以CGO_ENABLED=0和-trimpath输出 `_local/bin/<系统>-<架构>/mms-client` 等六个cmd通信程序，Windows加.exe。交叉编译只证明编译成功，不能替代目标系统运行。
+测试脚本保存JSON结果到 `_local/reports/unit/`。`--examples`/`-Examples`运行九个应用示例，也可按示例路径独立运行。构建脚本以CGO_ENABLED=0和-trimpath输出 `_local/bin/<系统>-<架构>/mms-client` 等七个命令行工具，Windows加.exe。交叉编译只证明编译成功，不能替代目标系统运行。
 
 修复协议问题时，先增加能复现错误的回归测试，验证错误类型、旧有效状态、超时/取消和资源回收，再修复实现。模糊测试例如：
 

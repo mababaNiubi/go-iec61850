@@ -10,7 +10,7 @@ output_root="_local/bin/$target_os-$target_arch"
 mkdir -p -- "$output_root"
 suffix=
 if [[ $target_os == windows ]]; then suffix=.exe; fi
-for app in mms-client mms-server goose-publisher goose-subscriber sv-publisher sv-subscriber; do
+for app in mms-client mms-server goose-publisher goose-subscriber sv-publisher sv-subscriber scdinspect; do
     name=${app//\//-}$suffix
     CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" go build -trimpath -o "$output_root/$name" "./cmd/$app"
     printf '%s\n' "$output_root/$name"

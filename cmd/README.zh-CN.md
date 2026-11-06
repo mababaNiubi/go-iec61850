@@ -4,6 +4,15 @@
 
 这里是可运行的网络工具。学习如何在业务代码里调用库，直接看 [API手册](../docs/api/README.zh-CN.md) 或 [按场景拆分的示例](../examples/README.zh-CN.md)。
 
+## 离线查询 SCD
+
+```bash
+go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd
+go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
+```
+
+用 `-ref BayIEDCTRL/XCBR1.Pos.Oper -fc CO` 查询单个精确点名，用 `-ied StationHMI -ap S1 -inputs` 列出监控端的 GOOSE 输入绑定。[SCD API 和常用路径](../docs/api/scl.zh-CN.md)
+
 ## MMS：一个服务端，一个客户端
 
 ```bash
@@ -38,4 +47,4 @@ go run ./cmd/sv-publisher -interface eth0 -vlan 123 -interval 20ms -duration 1s
 
 GOOSE使用对应工具和-min/-max重传参数。-vlan -1发送/限定无标签；订阅默认-vlan -2接受有/无标签。Windows不投递目标组播时给订阅工具加-promiscuous。-capture写PCAP，-count到期不足数量会失败退出。SV默认-sync 0表示未同步。
 
-[平台与权限](../docs/platforms.zh-CN.md)。六个工具通过scripts/build构建到_local/bin；`cmd/internal`是参数、抓包与示例模型辅助，不是业务API。
+[平台与权限](../docs/platforms.zh-CN.md)。七个工具通过scripts/build构建到_local/bin；`cmd/internal`是参数、抓包与示例模型辅助，不是业务API。

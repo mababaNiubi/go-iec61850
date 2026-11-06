@@ -14,7 +14,7 @@ try {
     & go vet ./...
     if ($LASTEXITCODE -ne 0) { throw 'go vet failed' }
     if ($Examples) {
-        foreach ($example in @('mms/read-write','mms/read-batch','mms/browse','mms/named-list','mms/report','goose/publish-subscribe','sv/publish-subscribe','sv/data-layout')) {
+        foreach ($example in @('mms/read-write','mms/read-batch','mms/browse','mms/named-list','mms/report','goose/publish-subscribe','sv/publish-subscribe','sv/data-layout','scd/breaker')) {
             $label=$example.Replace('/','-')
             & go run "./examples/$example" | Tee-Object -FilePath (Join-Path $results "$label.log")
             if ($LASTEXITCODE -ne 0) { throw "$example failed" }

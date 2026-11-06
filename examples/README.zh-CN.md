@@ -6,6 +6,7 @@
 
 | 我要学习 | 代码 | 运行 |
 |---|---|---|
+| 根据 SCD 接入设备采集、控制和监控订阅 | [断路器模型和两端代码](scd/breaker/README.zh-CN.md) | `go run ./examples/scd/breaker` |
 | 连接，读一个整数，写入，再读回 | [MMS读写](mms/read-write/main.go) | `go run ./examples/mms/read-write` |
 | 批量读取、逐项失败、数组/结构选择 | [MMS批量](mms/read-batch/main.go) | `go run ./examples/mms/read-batch` |
 | 查询Domain、变量名和声明类型 | [MMS目录](mms/browse/main.go) | `go run ./examples/mms/browse` |

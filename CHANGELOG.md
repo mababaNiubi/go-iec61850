@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 - 2026-11-07
+
+- Resolve SCD access points, model paths, static datasets and Layer 2 GOOSE streams using the new `scl` package and `scdinspect` tool.
+- Connect acquisition, direct binary control, actual feedback and ExtRef-based monitoring with the [breaker IED example](examples/scd/breaker/README.md).
+- Bind value, quality and timestamp paths with `Signal`, and commit coherent acquisitions using `IED.Update` or `Model.SetValues`.
+- Discover GOOSE inputs on server and client-only access points, and load configured MMS addresses and OSI selectors.
+- Add English and Simplified Chinese integration guides, common path tables, and separate device/monitor launch modes.
+
 ## 1.0.0 - 2026-11-07
 
 Initial tagged release of the native Go implementation.

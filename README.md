@@ -4,10 +4,14 @@ English | [简体中文](README.zh-CN.md)
 
 Native Go MMS clients and servers, Layer 2 GOOSE, and Sampled Values (SV). Requires Go 1.24 or later. The runtime library has no third-party Go dependencies and does not require cgo.
 
+## Run a model-driven device and monitor
+
+From this checkout, run `go run ./examples/scd/breaker` to see an SCD-defined breaker, MMS acquisition and control, and GOOSE feedback. Use `go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd` to list its access points offline. SCD model integration is available in v1.1.0. [SCD API and common paths](docs/api/scl.md) · [Device and monitor example](examples/scd/breaker/README.md)
+
 ## Install
 
 ```bash
-go get github.com/mababaNiubi/go-iec61850@v1.0.0
+go get github.com/mababaNiubi/go-iec61850@v1.1.0
 ```
 
 Import the package for the protocol you need, such as `github.com/mababaNiubi/go-iec61850/mms`.
@@ -60,13 +64,13 @@ This example uses a temporary loopback server by default. Add `-address host:por
 | Publish state changes, subscribe, and detect TAL expiry | [GOOSE API](docs/api/goose.md) |
 | Publish/subscribe to samples, use multiple ASDUs, or define a byte layout | [SV API](docs/api/sv.md) |
 
-[API guide](docs/api/README.md) · [Eight focused examples](examples/README.md) · [Command-line tools](cmd/README.md) · [Release notes](CHANGELOG.md)
+[API guide](docs/api/README.md) · [Application examples](examples/README.md) · [Command-line tools](cmd/README.md) · [Release notes](CHANGELOG.md)
 
 ## Repository layout
 
 - `examples/`: one application task per directory, with annotated source and a usage guide. MMS uses loopback by default; GOOSE/SV use an in-memory link.
-- `cmd/`: six tools for device connections, network interfaces, offline frames, and PCAP capture.
-- `mms/`, `data/`, `goose/`, `sv/`, `ethernet/`: the library packages applications import.
+- `cmd/`: network tools for device connections, real interfaces, offline frames, and PCAP capture, plus the offline SCD inspector.
+- `mms/`, `data/`, `goose/`, `sv/`, `ethernet/`, `scl/`: the library packages applications import.
 - `docs/api/`: practical API documentation. English is the default; each guide links to its Simplified Chinese version.
 - `_local/`: ignored C references, interoperability fixtures, standards, reports, and build artifacts. These files are not distributed with Git.
 
@@ -84,10 +88,10 @@ bash scripts/build.sh
 bash scripts/test.sh --race --examples
 ```
 
-The six tools are written to `_local/bin/<os>-<arch>/`. Production builds use `CGO_ENABLED=0` and `-trimpath`. Real Ethernet access requires Npcap on Windows or raw socket permissions on Linux; see [platform support](docs/platforms.md). [Development](docs/development.md) describes the optional local C interoperability setup.
+The tools are written to `_local/bin/<os>-<arch>/`. Production builds use `CGO_ENABLED=0` and `-trimpath`. Real Ethernet access requires Npcap on Windows or raw socket permissions on Linux; see [platform support](docs/platforms.md). [Development](docs/development.md) describes the optional local C interoperability setup.
 
 ## Scope and license
 
-This release provides the MMS core and ordinary Layer 2 GOOSE/SV. Full ACSI/SCL modeling, report control blocks, R-GOOSE/R-SV, PTP, and security extensions are not implemented. A version tag does not imply IEC conformance certification.
+Version 1.1.0 provides the MMS core, ordinary Layer 2 GOOSE/SV, and the [documented SCD profile](docs/api/scl.md). Full ACSI/SCL modeling, report control blocks, R-GOOSE/R-SV, PTP, and security extensions are not implemented. A version tag does not imply IEC conformance certification.
 
 Licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

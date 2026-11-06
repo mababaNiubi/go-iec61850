@@ -12,7 +12,7 @@ try {
     $outputRoot=Join-Path $projectRoot "_local/bin/$TargetOS-$TargetArch"
     New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
     $suffix=if ($TargetOS -eq 'windows') {'.exe'} else {''}
-    foreach ($app in @('mms-client','mms-server','goose-publisher','goose-subscriber','sv-publisher','sv-subscriber')) {
+    foreach ($app in @('mms-client','mms-server','goose-publisher','goose-subscriber','sv-publisher','sv-subscriber','scdinspect')) {
         $name=$app.Replace('/','-')+$suffix
         & go build -trimpath -o (Join-Path $outputRoot $name) "./cmd/$app"
         if ($LASTEXITCODE -ne 0) { throw "Build failed: $app" }

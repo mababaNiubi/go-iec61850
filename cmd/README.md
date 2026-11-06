@@ -4,6 +4,15 @@ English | [简体中文](README.zh-CN.md)
 
 These are runnable network tools. To call the library from application code, start with the [API guide](../docs/api/README.md) or [focused examples](../examples/README.md). Run the commands below from the repository root. Use `-h` on any tool for its full flag list.
 
+## Inspect an SCD offline
+
+```bash
+go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd
+go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
+```
+
+Use `-ref BayIEDCTRL/XCBR1.Pos.Oper -fc CO` to resolve one exact point. Use `-ied StationHMI -ap S1 -inputs` to list the receiver's GOOSE bindings. [SCD API and paths](../docs/api/scl.md)
+
 ## MMS client and server
 
 Start the server:
@@ -51,4 +60,4 @@ GOOSE uses the corresponding `goose-subscriber` / `goose-publisher` tools and `-
 | `-count <n>` | Require the requested count before the deadline; insufficient reception exits with an error |
 | SV `-sync 0` | Mark samples as unsynchronized, the default |
 
-See [platform requirements and permissions](../docs/platforms.md). The build scripts produce all six tools under `_local/bin/<os>-<arch>/`. `cmd/internal` holds CLI, capture, and sample-model helpers; applications should import the public protocol packages.
+See [platform requirements and permissions](../docs/platforms.md). The build scripts produce all seven tools under `_local/bin/<os>-<arch>/`. `cmd/internal` holds CLI, capture, and sample-model helpers; applications should import the public protocol packages.

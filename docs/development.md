@@ -26,7 +26,7 @@ bash scripts/build.sh
 GOOS=linux GOARCH=amd64 bash scripts/build.sh
 ```
 
-Test scripts save JSON output under `_local/reports/unit/`. `-Examples` / `--examples` also runs the eight API examples, which can be run individually. Build scripts use `CGO_ENABLED=0` and `-trimpath` and place the six tools under `_local/bin/<os>-<arch>/`, with `.exe` on Windows. Cross-compilation establishes build compatibility; running on the target OS is a separate check.
+Test scripts save JSON output under `_local/reports/unit/`. `-Examples` / `--examples` also runs the nine application examples, which can be run individually. Build scripts use `CGO_ENABLED=0` and `-trimpath` and place the seven tools under `_local/bin/<os>-<arch>/`, with `.exe` on Windows. Cross-compilation establishes build compatibility; running on the target OS is a separate check.
 
 When fixing a protocol defect, add a focused regression that reproduces it. Cover the relevant error type, preservation of valid state, deadlines/cancellation, and resource cleanup. For example, fuzz BER parsing with:
 
