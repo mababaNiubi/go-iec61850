@@ -6,7 +6,7 @@
 
 ## 连接设备并读写一个整型变量
 
-先启动测试服务：`go run ./cmd/mms-server -address 127.0.0.1:8102`。然后把下面代码保存为一个Go程序执行，或运行 [read-write示例](../../examples/mms/read-write/main.go)。
+先启动测试服务：`go run ./cmd/iedlab protocol mms-server -address 127.0.0.1:8102`。然后把下面代码保存为一个Go程序执行，或运行 [read-write示例](../../examples/mms/read-write/main.go)。
 
 ```go
 package main

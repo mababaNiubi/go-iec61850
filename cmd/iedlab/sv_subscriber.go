@@ -15,29 +15,32 @@ import (
 	"github.com/mababaNiubi/go-iec61850/sv"
 )
 
-func show(e sv.Event) {
+func showSV(e sv.Event) {
 	fmt.Printf("%s svID=%s smpCnt=%d confRev=%d sync=%d bytes=%d missing=%d\n", e.Kind, e.ASDU.SVID, e.ASDU.SampleCount, e.ASDU.ConfRev, e.ASDU.SampleSync, len(e.ASDU.Data), e.MissingSamples)
 }
-func run() error {
-	iface := flag.String("interface", "", "explicit Ethernet interface name/description/index")
-	list := flag.Bool("list", false, "list capture interfaces without sending")
-	promiscuous := flag.Bool("promiscuous", false, "request promiscuous capture when the adapter does not deliver SV/GOOSE multicast groups")
-	duration := flag.Duration("duration", 5*time.Second, "run duration; 0 waits for Ctrl+C")
-	count := flag.Int("count", 0, "stop after N accepted samples; 0 waits for duration")
-	vlan := flag.Int("vlan", -2, "VLAN ID filter; -1 requires untagged, -2 accepts both")
-	destination := flag.String("destination", "01:0c:cd:04:00:aa", "SV multicast MAC filter")
-	appid := flag.String("appid", "0x4000", "SV application identifier filter")
-	svid := flag.String("svid", "sampleSV1", "sampled-value stream identifier")
-	dataset := flag.String("dataset", "sample/LLN0$sv", "dataset reference filter")
-	revision := flag.Uint("confrev", 3, "expected revision; 0 pins the first")
-	modulus := flag.Uint("modulus", 65536, "sample counter modulus")
-	length := flag.Int("data-length", 64, "expected raw dataset byte count")
-	timeout := flag.Duration("timeout", time.Second, "local sample-stream timeout; SV has no TAL")
-	allowUnsync := flag.Bool("allow-unsynchronized", true, "accept sync=0 (enabled for software demo)")
-	allowRestart := flag.Bool("allow-restart-after-timeout", false, "allow an expired stream to restart at counter zero")
-	capture := flag.String("capture", "", "optional incoming PCAP file")
-	input := flag.String("input-frame", "", "decode/validate one offline Ethernet frame")
-	flag.Parse()
+func legacySVSubscriber(args []string) error {
+	flags := flag.NewFlagSet("sv-subscriber", flag.ContinueOnError)
+	iface := flags.String("interface", "", "explicit Ethernet interface name/description/index")
+	list := flags.Bool("list", false, "list capture interfaces without sending")
+	promiscuous := flags.Bool("promiscuous", false, "request promiscuous capture when the adapter does not deliver SV/GOOSE multicast groups")
+	duration := flags.Duration("duration", 5*time.Second, "run duration; 0 waits for Ctrl+C")
+	count := flags.Int("count", 0, "stop after N accepted samples; 0 waits for duration")
+	vlan := flags.Int("vlan", -2, "VLAN ID filter; -1 requires untagged, -2 accepts both")
+	destination := flags.String("destination", "01:0c:cd:04:00:aa", "SV multicast MAC filter")
+	appid := flags.String("appid", "0x4000", "SV application identifier filter")
+	svid := flags.String("svid", "sampleSV1", "sampled-value stream identifier")
+	dataset := flags.String("dataset", "sample/LLN0$sv", "dataset reference filter")
+	revision := flags.Uint("confrev", 3, "expected revision; 0 pins the first")
+	modulus := flags.Uint("modulus", 65536, "sample counter modulus")
+	length := flags.Int("data-length", 64, "expected raw dataset byte count")
+	timeout := flags.Duration("timeout", time.Second, "local sample-stream timeout; SV has no TAL")
+	allowUnsync := flags.Bool("allow-unsynchronized", true, "accept sync=0 (enabled for software demo)")
+	allowRestart := flags.Bool("allow-restart-after-timeout", false, "allow an expired stream to restart at counter zero")
+	capture := flags.String("capture", "", "optional incoming PCAP file")
+	input := flags.String("input-frame", "", "decode/validate one offline Ethernet frame")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
 	if *list {
 		return cli.List(os.Stdout)
 	}
@@ -80,7 +83,7 @@ func run() error {
 			return fmt.Errorf("no matching ASDU")
 		}
 		for _, e := range events {
-			show(e)
+			showSV(e)
 		}
 		return nil
 	}
@@ -113,7 +116,7 @@ func run() error {
 	for {
 		select {
 		case event := <-subscriber.Events():
-			show(event)
+			showSV(event)
 			if event.Kind != sv.Expired {
 				accepted++
 			}
@@ -127,7 +130,7 @@ func run() error {
 			for {
 				select {
 				case event := <-subscriber.Events():
-					show(event)
+					showSV(event)
 					if event.Kind != sv.Expired {
 						accepted++
 					}
@@ -138,11 +141,5 @@ func run() error {
 			fmt.Printf("RECEIVED %d samples\n", accepted)
 			return cli.Complete(err, accepted, *count, "samples")
 		}
-	}
-}
-func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
 	}
 }

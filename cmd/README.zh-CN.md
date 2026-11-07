@@ -1,50 +1,28 @@
-# 命令行工具
+# IEDLab 应用入口
 
 [English](README.md) | 简体中文
 
-这里是可运行的网络工具。学习如何在业务代码里调用库，直接看 [API手册](../docs/api/README.zh-CN.md) 或 [按场景拆分的示例](../examples/README.zh-CN.md)。
+仓库统一构建为一个 `iedlab` 程序，提供浏览器工作台和命令行。
 
-## 离线查询 SCD
-
-```bash
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
+```sh
+go run ./cmd/iedlab serve -http 127.0.0.1:8080
 ```
 
-用 `-ref BayIEDCTRL/XCBR1.Pos.Oper -fc CO` 查询单个精确点名，用 `-ied StationHMI -ap S1 -inputs` 列出监控端的 GOOSE 输入绑定。[SCD API 和常用路径](../docs/api/scl.zh-CN.md)
+打开 `http://127.0.0.1:8080`，导入 SCL 或载入示例，即可浏览测点并启动 IED 模拟。前端随 Go 程序一起提供。[工作台使用指南](../docs/workbench.zh-CN.md)
 
-## MMS：一个服务端，一个客户端
+| 命令 | 用途 |
+|---|---|
+| `iedlab serve [-file model.scd]` | 网页界面、HTTP API、模拟器管理、远端 MMS 客户端 |
+| `iedlab simulate -file model.scd -ied IED -ap AP` | 无界面的 SCL 设备模拟，支持 MMS 和 GOOSE |
+| `iedlab inspect -file model.scd` | 查询接入点、路径、数据集、GOOSE 和 ExtRef |
+| `iedlab protocol <工具>` | 底层 MMS/GOOSE/SV 调试 |
 
-```bash
-go run ./cmd/mms-server -address 127.0.0.1:8102
+`protocol` 子命令包括 `mms-client`、`mms-server`、`goose-publisher`、`goose-subscriber`、`sv-publisher`、`sv-subscriber`，原有选项可通过 `-h` 查看。
+
+```sh
+go run ./cmd/iedlab simulate -ied BayIED -ap S1 -listen 127.0.0.1:8102
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
+go run ./cmd/iedlab protocol sv-subscriber -list
 ```
 
-另一个终端：
-
-```bash
-go run ./cmd/mms-client -address 127.0.0.1:8102 -item int -write-int 99
-```
-
-客户端支持-domain、-item、-write-int和-pdu。服务端提供sample模型，源码在internal/models/mms。所有参数用-h查看。
-
-## GOOSE/SV：离线完整帧
-
-```bash
-go run ./cmd/goose-publisher -output-frame _local/frames/goose.bin
-go run ./cmd/goose-subscriber -input-frame _local/frames/goose.bin
-go run ./cmd/sv-publisher -output-frame _local/frames/sv.bin
-go run ./cmd/sv-subscriber -input-frame _local/frames/sv.bin
-```
-
-## 接真实接口
-
-先`go run ./cmd/sv-subscriber -list`列出接口，用实际名称替换eth0。在两个终端运行：
-
-```bash
-go run ./cmd/sv-subscriber -interface eth0 -vlan 123 -count 3 -duration 5s
-go run ./cmd/sv-publisher -interface eth0 -vlan 123 -interval 20ms -duration 1s
-```
-
-GOOSE使用对应工具和-min/-max重传参数。-vlan -1发送/限定无标签；订阅默认-vlan -2接受有/无标签。Windows不投递目标组播时给订阅工具加-promiscuous。-capture写PCAP，-count到期不足数量会失败退出。SV默认-sync 0表示未同步。
-
-[平台与权限](../docs/platforms.zh-CN.md)。七个工具通过scripts/build构建到_local/bin；`cmd/internal`是参数、抓包与示例模型辅助，不是业务API。
+`cmd/internal` 放置底层诊断的参数、抓包和示例模型辅助。协议库和[独立 API 示例](../examples/README.zh-CN.md)按各自用途组织。

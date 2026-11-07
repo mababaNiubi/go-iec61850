@@ -22,6 +22,6 @@ GOOSE/SV的Frame保存完整Ethernet字段，PDU/ASDU保存协议内容。Encode
 
 应用创建的FrameIO、网卡连接和Listener需要按各API约定关闭。MMS请求使用context；示例在退出时取消并等待后台任务。GOOSE/SV事件队列有界，溢出显式报错，不静默丢弃。
 
-`cmd/`保存网络命令行工具，其模型和参数辅助在 `cmd/internal/`。`examples/`每个入口只展示一个API场景，`examples/internal/`仅提供可选的本机MMS对端和内存链路。应用直接使用公开库，无需引用这些内部演示包。
+`cmd/iedlab` 是统一入口，浏览器与命令行共用 `internal/workbench` 的 SCL 会话、客户端、模拟器生命周期和值转换。前端静态文件嵌入 Go 程序，底层诊断复用 `cmd/internal/` 辅助。`examples/`每个入口只展示一个API场景，`examples/internal/`仅提供可选的本机MMS对端和内存链路。应用直接使用公开库，无需引用这些内部演示包。
 
 生产Go单元测试随包提交。参考C代码、跨语言测试和标准文件在Git忽略的 `_local/` 中，既不参与生产依赖，也不参与根模块的 `go test ./...`。

@@ -20,7 +20,7 @@ GOOSE BayIEDCTRL/XCBR1$ST$Pos$stVal stNum=3 position=open
 
 | Start here | What to change |
 |---|---|
-| [bay.scd](bay.scd) | Edit IED/AP/LD, LN templates and points, dataset FCDA order, GSEControl, Communication/GSE and receiver ExtRef |
+| [bay.scd](../../../internal/sample/bay.scd) | Edit IED/AP/LD, LN templates and points, dataset FCDA order, GSEControl, Communication/GSE and receiver ExtRef |
 | [process.go](process.go) | Bind your signal names and implement `processIO.Read` and `Operate` using your driver or interlock logic |
 | [monitor.go](monitor.go) | Poll MMS, send a complete Oper, consume the ExtRef's value and mark stale GOOSE data |
 | [main.go](main.go) | Select the IED/AP, create the server and links, run the loops and coordinate shutdown |
@@ -44,8 +44,8 @@ To send a single command to this simulated IED, start the monitor with `-operate
 Start by inspecting the available IEDs, then list the paths of interest:
 
 ```sh
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
 ```
 
 Pass `-file your.scd -ied <ied> -ap <ap> -ld <instance>` to use a model with the same application signals. Other models should adapt `bindPoints` to their own LN/DO/DA semantics, and select their own block name and subscriber ExtRef instead of the example's `gcbPos` and `StationHMI/S1/breakerPosition`. The public `scl` package resolves the identifiers and wire format. The [SCD API guide](../../../docs/api/scl.md) includes the path table, integration calls and supported profile.

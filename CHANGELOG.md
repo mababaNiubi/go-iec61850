@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Consolidate diagnostics into the `iedlab` CLI with a browser workbench, SCL import, model browsing, typed value editing, MMS/GOOSE simulation, remote MMS client and live event journal.
+- Share the sample SCL between the application and examples, and document debugging and driver customization in English and Simplified Chinese.
+
 ## 1.1.0 - 2026-11-07
 
 - Resolve SCD access points, model paths, static datasets and Layer 2 GOOSE streams using the new `scl` package and `scdinspect` tool.

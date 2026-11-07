@@ -16,7 +16,7 @@
 | 更新测量值，发送两个连续采样 | [SV](sv/publish-subscribe/main.go) | `go run ./examples/sv/publish-subscribe` |
 | 按偏移组织整数、浮点、Quality和UTC | [SV布局](sv/data-layout/main.go) | `go run ./examples/sv/data-layout` |
 
-MMS前四个示例默认自动创建回环服务，结束时关闭。加`-address 127.0.0.1:8102`可使用先启动的`go run ./cmd/mms-server`；示例依赖该服务提供的sample变量。报告示例包含本机两端。
+MMS前四个示例默认自动创建回环服务，结束时关闭。加`-address 127.0.0.1:8102`可使用先启动的`go run ./cmd/iedlab protocol mms-server`；示例依赖该服务提供的sample变量。报告示例包含本机两端。
 
 GOOSE/SV示例用内存FrameIO来展示真实编解码和对象调用，无需网卡权限。要接真实Ethernet，查看API手册中的ethernet.Open代码，或使用 [cmd工具](../cmd/README.zh-CN.md)。
 

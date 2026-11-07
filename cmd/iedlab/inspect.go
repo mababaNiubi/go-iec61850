@@ -6,27 +6,24 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net"
 	"strings"
 
 	"github.com/mababaNiubi/go-iec61850/scl"
 )
 
-func main() {
-	if err := run(); err != nil {
-		log.Fatal(err)
+func runInspect(args []string) error {
+	flags := flag.NewFlagSet("inspect", flag.ContinueOnError)
+	file := flags.String("file", "", "path to an SCD, ICD or CID file")
+	ied := flags.String("ied", "", "source IED name (omit to list access points)")
+	ap := flags.String("ap", "", "source access point name")
+	ref := flags.String("ref", "", "look up one full LD/LN.DO.DA reference with -fc")
+	fc := flags.String("fc", "", "functional constraint, e.g. ST, MX, CO, CF")
+	match := flags.String("match", "", "limit the point listing to references containing this text")
+	inputs := flags.Bool("inputs", false, "list GOOSE ExtRef bindings of the selected receiver access point")
+	if err := flags.Parse(args); err != nil {
+		return err
 	}
-}
-func run() error {
-	file := flag.String("file", "", "path to an SCD, ICD or CID file")
-	ied := flag.String("ied", "", "source IED name (omit to list access points)")
-	ap := flag.String("ap", "", "source access point name")
-	ref := flag.String("ref", "", "look up one full LD/LN.DO.DA reference with -fc")
-	fc := flag.String("fc", "", "functional constraint, e.g. ST, MX, CO, CF")
-	match := flag.String("match", "", "limit the point listing to references containing this text")
-	inputs := flag.Bool("inputs", false, "list GOOSE ExtRef bindings of the selected receiver access point")
-	flag.Parse()
 	if *file == "" {
 		return fmt.Errorf("supply -file path/to/model.scd")
 	}

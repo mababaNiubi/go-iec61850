@@ -2,7 +2,7 @@
 
 English | [简体中文](scl.zh-CN.md)
 
-Run the [breaker example](../../examples/scd/breaker/README.md) from the repository root. Its [SCD](../../examples/scd/breaker/bay.scd) describes a bay controller, a station monitor and the station bus. Both applications use the same engineered names and dataset order.
+Run the [breaker example](../../examples/scd/breaker/README.md) from the repository root. Its [SCD](../../internal/sample/bay.scd) describes a bay controller, a station monitor and the station bus. Both applications use the same engineered names and dataset order.
 
 ```sh
 go run ./examples/scd/breaker
@@ -13,10 +13,10 @@ The station sees an open breaker over GOOSE and reads 0 W over MMS. Its first cl
 ## Find your access point and paths
 
 ```sh
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied BayIED -ap S1 -ref BayIEDCTRL/MMXU1.TotW.mag.f -fc MX
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied StationHMI -ap S1 -inputs
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied BayIED -ap S1 -ref BayIEDCTRL/MMXU1.TotW.mag.f -fc MX
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied StationHMI -ap S1 -inputs
 ```
 
 The commands list access points and their server role, print matching points and communication settings, resolve one exact name and type, and discover the station's GOOSE inputs. All work offline.

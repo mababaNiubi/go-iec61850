@@ -15,27 +15,30 @@ import (
 	"github.com/mababaNiubi/go-iec61850/goose"
 )
 
-func show(e goose.Event) {
+func showGoose(e goose.Event) {
 	fmt.Printf("%s st=%d sq=%d confRev=%d values=%d tal=%dms\n", e.Kind, e.Frame.PDU.StateNumber, e.Frame.PDU.SequenceNumber, e.Frame.PDU.ConfRev, len(e.Frame.PDU.Values), e.Frame.PDU.TimeAllowedToLive)
 }
-func run() error {
-	iface := flag.String("interface", "", "explicit Ethernet interface name/description/index")
-	list := flag.Bool("list", false, "list capture interfaces without sending")
-	promiscuous := flag.Bool("promiscuous", false, "request promiscuous capture when the adapter does not deliver SV/GOOSE multicast groups")
-	duration := flag.Duration("duration", 5*time.Second, "run duration; 0 waits for Ctrl+C")
-	count := flag.Int("count", 0, "stop after this many accepted frames; 0 waits for duration")
-	vlan := flag.Int("vlan", -2, "VLAN ID filter; -1 requires untagged, -2 accepts both")
-	destination := flag.String("destination", "01:0c:cd:01:00:aa", "GOOSE multicast MAC filter")
-	appid := flag.String("appid", "0x1000", "GOOSE application identifier filter")
-	control := flag.String("gocb", "sample/LLN0$GO$interop", "GOOSE control block reference")
-	dataset := flag.String("dataset", "sample/LLN0$interop", "GOOSE dataset reference")
-	revision := flag.Uint("confrev", 3, "expected configuration revision; 0 pins the first")
-	simulation := flag.Bool("allow-simulation", false, "accept simulated dataset values")
-	commission := flag.Bool("allow-commissioning", false, "accept datasets marked needs commissioning")
-	allowRestart := flag.Bool("allow-restart-after-timeout", false, "allow a timed-out publisher to restart with a new initial event")
-	capture := flag.String("capture", "", "optional incoming PCAP file")
-	input := flag.String("input-frame", "", "decode/validate one offline Ethernet frame")
-	flag.Parse()
+func legacyGooseSubscriber(args []string) error {
+	flags := flag.NewFlagSet("goose-subscriber", flag.ContinueOnError)
+	iface := flags.String("interface", "", "explicit Ethernet interface name/description/index")
+	list := flags.Bool("list", false, "list capture interfaces without sending")
+	promiscuous := flags.Bool("promiscuous", false, "request promiscuous capture when the adapter does not deliver SV/GOOSE multicast groups")
+	duration := flags.Duration("duration", 5*time.Second, "run duration; 0 waits for Ctrl+C")
+	count := flags.Int("count", 0, "stop after this many accepted frames; 0 waits for duration")
+	vlan := flags.Int("vlan", -2, "VLAN ID filter; -1 requires untagged, -2 accepts both")
+	destination := flags.String("destination", "01:0c:cd:01:00:aa", "GOOSE multicast MAC filter")
+	appid := flags.String("appid", "0x1000", "GOOSE application identifier filter")
+	control := flags.String("gocb", "sample/LLN0$GO$interop", "GOOSE control block reference")
+	dataset := flags.String("dataset", "sample/LLN0$interop", "GOOSE dataset reference")
+	revision := flags.Uint("confrev", 3, "expected configuration revision; 0 pins the first")
+	simulation := flags.Bool("allow-simulation", false, "accept simulated dataset values")
+	commission := flags.Bool("allow-commissioning", false, "accept datasets marked needs commissioning")
+	allowRestart := flags.Bool("allow-restart-after-timeout", false, "allow a timed-out publisher to restart with a new initial event")
+	capture := flags.String("capture", "", "optional incoming PCAP file")
+	input := flags.String("input-frame", "", "decode/validate one offline Ethernet frame")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
 	if *list {
 		return cli.List(os.Stdout)
 	}
@@ -74,7 +77,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		show(event)
+		showGoose(event)
 		return nil
 	}
 	if *iface == "" {
@@ -106,7 +109,7 @@ func run() error {
 	for {
 		select {
 		case event := <-subscriber.Events():
-			show(event)
+			showGoose(event)
 			if event.Kind != goose.Expired {
 				accepted++
 			}
@@ -120,7 +123,7 @@ func run() error {
 			for {
 				select {
 				case event := <-subscriber.Events():
-					show(event)
+					showGoose(event)
 					if event.Kind != goose.Expired {
 						accepted++
 					}
@@ -131,11 +134,5 @@ func run() error {
 			fmt.Printf("RECEIVED %d frames\n", accepted)
 			return cli.Complete(err, accepted, *count, "frames")
 		}
-	}
-}
-func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
 	}
 }

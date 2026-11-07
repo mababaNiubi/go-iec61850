@@ -1,63 +1,28 @@
-# Command-line tools
+# IEDLab application
 
 English | [简体中文](README.zh-CN.md)
 
-These are runnable network tools. To call the library from application code, start with the [API guide](../docs/api/README.md) or [focused examples](../examples/README.md). Run the commands below from the repository root. Use `-h` on any tool for its full flag list.
+The repository builds one executable, `iedlab`, with a browser workspace and terminal commands.
 
-## Inspect an SCD offline
-
-```bash
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
+```sh
+go run ./cmd/iedlab serve -http 127.0.0.1:8080
 ```
 
-Use `-ref BayIEDCTRL/XCBR1.Pos.Oper -fc CO` to resolve one exact point. Use `-ied StationHMI -ap S1 -inputs` to list the receiver's GOOSE bindings. [SCD API and paths](../docs/api/scl.md)
+Open `http://127.0.0.1:8080`, load an SCL file or the sample, then browse values and start an IED simulator. The frontend is embedded in Go. [Workbench guide](../docs/workbench.md)
 
-## MMS client and server
-
-Start the server:
-
-```bash
-go run ./cmd/mms-server -address 127.0.0.1:8102
-```
-
-In another terminal, read and write the sample integer:
-
-```bash
-go run ./cmd/mms-client -address 127.0.0.1:8102 -item int -write-int 99
-```
-
-The client accepts `-domain`, `-item`, `-write-int`, and `-pdu`. The server exposes the sample model defined in [internal/models/mms](internal/models/mms/model.go). Use the device's actual domain, item, and listening address when connecting to another peer.
-
-## GOOSE/SV offline frames
-
-Write and decode complete Ethernet frames without opening a NIC:
-
-```bash
-go run ./cmd/goose-publisher -output-frame _local/frames/goose.bin
-go run ./cmd/goose-subscriber -input-frame _local/frames/goose.bin
-go run ./cmd/sv-publisher -output-frame _local/frames/sv.bin
-go run ./cmd/sv-subscriber -input-frame _local/frames/sv.bin
-```
-
-## Use a real interface
-
-List available interfaces with `go run ./cmd/sv-subscriber -list`. Replace `eth0` with the selected interface. Start the subscriber first, then the publisher in a second terminal:
-
-```bash
-go run ./cmd/sv-subscriber -interface eth0 -vlan 123 -count 3 -duration 5s
-go run ./cmd/sv-publisher -interface eth0 -vlan 123 -interval 20ms -duration 1s
-```
-
-GOOSE uses the corresponding `goose-subscriber` / `goose-publisher` tools and `-min` / `-max` retransmission intervals. Relevant flags:
-
-| Flag | Behavior |
+| Command | Purpose |
 |---|---|
-| `-vlan -1` | Publish untagged frames or restrict reception to untagged frames |
-| Subscriber default `-vlan -2` | Accept tagged and untagged frames |
-| `-promiscuous` | Explicitly enable promiscuous reception when a Windows interface does not deliver the multicast group |
-| `-capture <path>` | Save a PCAP capture |
-| `-count <n>` | Require the requested count before the deadline; insufficient reception exits with an error |
-| SV `-sync 0` | Mark samples as unsynchronized, the default |
+| `iedlab serve [-file model.scd]` | Browser UI, HTTP API, simulator management and remote MMS client |
+| `iedlab simulate -file model.scd -ied IED -ap AP` | Headless SCL-backed IED with MMS and GOOSE |
+| `iedlab inspect -file model.scd` | Access points, paths, datasets, GOOSE and ExtRef inspection |
+| `iedlab protocol <tool>` | Advanced MMS/GOOSE/SV diagnostics |
 
-See [platform requirements and permissions](../docs/platforms.md). The build scripts produce all seven tools under `_local/bin/<os>-<arch>/`. `cmd/internal` holds CLI, capture, and sample-model helpers; applications should import the public protocol packages.
+`protocol` accepts `mms-client`, `mms-server`, `goose-publisher`, `goose-subscriber`, `sv-publisher` and `sv-subscriber`. Existing options remain available with `-h`.
+
+```sh
+go run ./cmd/iedlab simulate -ied BayIED -ap S1 -listen 127.0.0.1:8102
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
+go run ./cmd/iedlab protocol sv-subscriber -list
+```
+
+`cmd/internal` contains diagnostic flag, capture and fixture helpers. Protocol libraries and focused [API examples](../examples/README.md) are separate from the application.

@@ -6,7 +6,6 @@ package main
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,12 +19,10 @@ import (
 	"github.com/mababaNiubi/go-iec61850/ethernet"
 	"github.com/mababaNiubi/go-iec61850/examples/internal/memory"
 	"github.com/mababaNiubi/go-iec61850/goose"
+	samplemodel "github.com/mababaNiubi/go-iec61850/internal/sample"
 	"github.com/mababaNiubi/go-iec61850/mms"
 	"github.com/mababaNiubi/go-iec61850/scl"
 )
-
-//go:embed bay.scd
-var exampleSCD []byte
 
 func main() {
 	if err := run(); err != nil && !errors.Is(err, context.Canceled) {
@@ -54,7 +51,7 @@ func run() (err error) {
 	}
 	var sys *scl.System
 	if *file == "" {
-		sys, err = scl.Parse(bytes.NewReader(exampleSCD))
+		sys, err = scl.Parse(bytes.NewReader(samplemodel.SCL()))
 	} else {
 		sys, err = scl.ParseFile(*file)
 	}

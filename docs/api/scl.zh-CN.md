@@ -2,7 +2,7 @@
 
 [English](scl.md) | 简体中文
 
-先从仓库根目录运行[断路器示例](../../examples/scd/breaker/README.zh-CN.md)。[SCD 文件](../../examples/scd/breaker/bay.scd)定义了间隔 IED、监控 IED 和站控层网络。两端共享同一套点名、类型和数据集顺序。
+先从仓库根目录运行[断路器示例](../../examples/scd/breaker/README.zh-CN.md)。[SCD 文件](../../internal/sample/bay.scd)定义了间隔 IED、监控 IED 和站控层网络。两端共享同一套点名、类型和数据集顺序。
 
 ```sh
 go run ./examples/scd/breaker
@@ -13,10 +13,10 @@ go run ./examples/scd/breaker
 ## 先查 SCD 的接入点和常用路径
 
 ```sh
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied BayIED -ap S1 -ref BayIEDCTRL/MMXU1.TotW.mag.f -fc MX
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied StationHMI -ap S1 -inputs
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied BayIED -ap S1 -ref BayIEDCTRL/MMXU1.TotW.mag.f -fc MX
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied StationHMI -ap S1 -inputs
 ```
 
 第一条列出 IED、接入点及其是否有 Server。第二条列出匹配的对象、静态数据集和 GOOSE 参数。第三条查询精确路径和类型。第四条列出监控端定义的 GOOSE 输入和源对象。工具离线运行，无需连接设备。

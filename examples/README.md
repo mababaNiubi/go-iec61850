@@ -18,7 +18,7 @@ Run all commands from the repository root.
 | Update a measurement and send two consecutive samples | [SV](sv/publish-subscribe/main.go) | `go run ./examples/sv/publish-subscribe` |
 | Place integers, floats, Quality, and UTC at explicit offsets | [SV byte layout](sv/data-layout/main.go) | `go run ./examples/sv/data-layout` |
 
-The four MMS examples for reading, batching, browsing, and named lists start and close a temporary loopback peer by default. To use the sample command-line server instead, start `go run ./cmd/mms-server`, then add `-address 127.0.0.1:8102` to the example command. These examples expect its `sample` variables. The report example includes both endpoints locally.
+The four MMS examples for reading, batching, browsing, and named lists start and close a temporary loopback peer by default. To use the sample command-line server instead, start `go run ./cmd/iedlab protocol mms-server`, then add `-address 127.0.0.1:8102` to the example command. These examples expect its `sample` variables. The report example includes both endpoints locally.
 
 GOOSE/SV examples use an in-memory `FrameIO` to exercise frame encoding, decoding, and state objects without NIC permissions. For real Ethernet, use the `ethernet.Open` snippets in the API guide or the [command-line tools](../cmd/README.md).
 

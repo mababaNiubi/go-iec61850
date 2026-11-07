@@ -22,7 +22,7 @@ GOOSE/SV `Frame` types hold Ethernet fields; PDU/ASDU types hold protocol conten
 
 Applications close their own links, Ethernet connections, and listeners according to each API's ownership rules. MMS requests take contexts. Examples cancel and wait for background work before returning. GOOSE/SV event queues are bounded and report overflow explicitly.
 
-`cmd/` contains network tools, with argument helpers and sample models in `cmd/internal/`. Each `examples/` entry demonstrates one API task; `examples/internal/` supplies a local MMS peer and an in-memory link. Applications use public packages directly.
+`cmd/iedlab` is the single executable. Its browser and terminal entry points share `internal/workbench`, which owns SCL sessions, MMS clients, simulator lifetimes, typed value conversion and the embedded frontend. Advanced protocol diagnostics reuse `cmd/internal/` helpers. Each `examples/` entry demonstrates one API task; `examples/internal/` supplies a local MMS peer and an in-memory link. Applications use public packages directly.
 
 Go unit tests are kept with their packages. Reference C code, cross-language tests, and standards are stored in ignored `_local/` directories; they are not production dependencies and are outside the root module's `go test ./...` scope.
 

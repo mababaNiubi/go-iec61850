@@ -4,9 +4,17 @@ English | [简体中文](README.zh-CN.md)
 
 Native Go MMS clients and servers, Layer 2 GOOSE, and Sampled Values (SV). Requires Go 1.24 or later. The runtime library has no third-party Go dependencies and does not require cgo.
 
+## Open the browser workbench
+
+```sh
+go run ./cmd/iedlab serve -http 127.0.0.1:8080
+```
+
+Open `http://127.0.0.1:8080`, load an SCL file or the sample, and select an IED. Browse logical nodes, edit local acquisition values, start an MMS/GOOSE simulator and connect the MMS client. The frontend is embedded in the Go binary. [Workbench guide](docs/workbench.md) · [简体中文](docs/workbench.zh-CN.md)
+
 ## Run a model-driven device and monitor
 
-From this checkout, run `go run ./examples/scd/breaker` to see an SCD-defined breaker, MMS acquisition and control, and GOOSE feedback. Use `go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd` to list its access points offline. SCD model integration is available in v1.1.0. [SCD API and common paths](docs/api/scl.md) · [Device and monitor example](examples/scd/breaker/README.md)
+From this checkout, run `go run ./examples/scd/breaker` to see an SCD-defined breaker, MMS acquisition and control, and GOOSE feedback. Use `go run ./cmd/iedlab inspect -file internal/sample/bay.scd` to list its access points offline. SCD model integration is available in v1.1.0. [SCD API and common paths](docs/api/scl.md) · [Device and monitor example](examples/scd/breaker/README.md)
 
 ## Install
 
@@ -21,7 +29,7 @@ Import the package for the protocol you need, such as `github.com/mababaNiubi/go
 Start the sample peer in another terminal:
 
 ```bash
-go run ./cmd/mms-server -address 127.0.0.1:8102
+go run ./cmd/iedlab protocol mms-server -address 127.0.0.1:8102
 ```
 
 Use the following calls inside a function that returns an error:
@@ -69,7 +77,9 @@ This example uses a temporary loopback server by default. Add `-address host:por
 ## Repository layout
 
 - `examples/`: one application task per directory, with annotated source and a usage guide. MMS uses loopback by default; GOOSE/SV use an in-memory link.
-- `cmd/`: network tools for device connections, real interfaces, offline frames, and PCAP capture, plus the offline SCD inspector.
+- `cmd/iedlab/`: one application with `serve`, `simulate`, `inspect` and grouped `protocol` diagnostics.
+- `internal/workbench/`: the shared application runtime, HTTP API and embedded frontend.
+- `internal/sample/`: one SCL fixture shared by the application and examples.
 - `mms/`, `data/`, `goose/`, `sv/`, `ethernet/`, `scl/`: the library packages applications import.
 - `docs/api/`: practical API documentation. English is the default; each guide links to its Simplified Chinese version.
 - `_local/`: ignored C references, interoperability fixtures, standards, reports, and build artifacts. These files are not distributed with Git.
@@ -88,7 +98,7 @@ bash scripts/build.sh
 bash scripts/test.sh --race --examples
 ```
 
-The tools are written to `_local/bin/<os>-<arch>/`. Production builds use `CGO_ENABLED=0` and `-trimpath`. Real Ethernet access requires Npcap on Windows or raw socket permissions on Linux; see [platform support](docs/platforms.md). [Development](docs/development.md) describes the optional local C interoperability setup.
+The `iedlab` executable is written to `_local/bin/<os>-<arch>/`. Production builds use `CGO_ENABLED=0` and `-trimpath`. Real Ethernet access requires Npcap on Windows or raw socket permissions on Linux; see [platform support](docs/platforms.md). [Development](docs/development.md) describes the optional local C interoperability setup.
 
 ## Scope and license
 

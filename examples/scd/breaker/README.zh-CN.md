@@ -20,7 +20,7 @@ GOOSE BayIEDCTRL/XCBR1$ST$Pos$stVal stNum=3 position=open
 
 | 文件 | 自己接入时改什么 |
 |---|---|
-| [bay.scd](bay.scd) | 设备名、AP、LD、LN 模板和测点，数据集 FCDA 顺序、GSEControl、Communication/GSE 和接收方 ExtRef |
+| [bay.scd](../../../internal/sample/bay.scd) | 设备名、AP、LD、LN 模板和测点，数据集 FCDA 顺序、GSEControl、Communication/GSE 和接收方 ExtRef |
 | [process.go](process.go) | 将硬件信号绑定到点名，用自己的驱动和闭锁规则实现 `processIO.Read` 与 `Operate` |
 | [monitor.go](monitor.go) | MMS 轮询、发送完整 Oper、按 ExtRef 取订阅值、处理 GOOSE 失效 |
 | [main.go](main.go) | 选择 IED/AP，启动服务端、发布和订阅，协调退出 |
@@ -44,8 +44,8 @@ go run ./examples/scd/breaker -role monitor
 先查看文件里有哪些 IED、接入点和路径。
 
 ```sh
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd
-go run ./cmd/scdinspect -file examples/scd/breaker/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd
+go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied BayIED -ap S1 -match XCBR1.Pos
 ```
 
 相同业务信号的工程可传 `-file your.scd -ied <设备> -ap <接入点> -ld <逻辑设备实例>`。如果点表不同，按新设备的 LN/DO/DA 修改 `bindPoints`，并把示例的 `gcbPos` 和 `StationHMI/S1/breakerPosition` 换成实际控制块和接收方 ExtRef。公开 `scl` 包负责解析引用和报文字段。[SCD API 指南](../../../docs/api/scl.zh-CN.md)给出了常用路径、设备与监控端调用和支持范围。

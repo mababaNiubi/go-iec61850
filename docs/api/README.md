@@ -6,6 +6,7 @@ Choose the task you are implementing. Each guide explains the objects, parameter
 
 | Task | API documentation | Runnable source |
 |---|---|---|
+| Use a browser workspace or headless CLI for IED debugging | [IEDLab workbench](../workbench.md) | [Application entry point](../../cmd/iedlab/main.go) |
 | Load an SCD, find model paths, bind acquisition and controls, subscribe by ExtRef | [SCD model integration](scl.md) | [breaker IED and station](../../examples/scd/breaker/README.md) |
 | Connect and read or write a variable | [MMS: connect and read/write](mms.md#connect-and-read-or-write-an-integer) | [read-write](../../examples/mms/read-write/main.go) |
 | Read several variables and handle partial failures | [MMS: batch reads](mms.md#read-several-variables) | [read-batch](../../examples/mms/read-batch/main.go) |

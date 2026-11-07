@@ -17,22 +17,25 @@ import (
 	"github.com/mababaNiubi/go-iec61850/sv"
 )
 
-func run() error {
-	iface := flag.String("interface", "", "explicit Ethernet interface name/description/index")
-	list := flag.Bool("list", false, "list capture interfaces without sending")
-	duration := flag.Duration("duration", time.Second, "run duration; 0 waits for Ctrl+C")
-	interval := flag.Duration("interval", time.Millisecond, "frame interval, independent of SV sample-rate metadata")
-	modulus := flag.Uint("modulus", 65536, "per-stream sample counter modulus, e.g.4000")
-	vlan := flag.Int("vlan", 123, "VLAN ID; -1 sends untagged Ethernet")
-	priority := flag.Int("priority", 4, "VLAN priority 0..7")
-	destination := flag.String("destination", "01:0c:cd:04:00:aa", "SV multicast MAC")
-	appid := flag.String("appid", "0x4000", "SV application identifier")
-	svid := flag.String("svid", "sampleSV1", "sampled-value stream identifier")
-	dataset := flag.String("dataset", "sample/LLN0$sv", "dataset reference; empty omits it")
-	sync := flag.Uint("sync", 0, "sample synchronization: 0 unsynchronized,1 local,2 global")
-	capture := flag.String("capture", "", "optional outgoing PCAP file")
-	output := flag.String("output-frame", "", "write one deterministic offline frame; do not open a network interface")
-	flag.Parse()
+func legacySVPublisher(args []string) error {
+	flags := flag.NewFlagSet("sv-publisher", flag.ContinueOnError)
+	iface := flags.String("interface", "", "explicit Ethernet interface name/description/index")
+	list := flags.Bool("list", false, "list capture interfaces without sending")
+	duration := flags.Duration("duration", time.Second, "run duration; 0 waits for Ctrl+C")
+	interval := flags.Duration("interval", time.Millisecond, "frame interval, independent of SV sample-rate metadata")
+	modulus := flags.Uint("modulus", 65536, "per-stream sample counter modulus, e.g.4000")
+	vlan := flags.Int("vlan", 123, "VLAN ID; -1 sends untagged Ethernet")
+	priority := flags.Int("priority", 4, "VLAN priority 0..7")
+	destination := flags.String("destination", "01:0c:cd:04:00:aa", "SV multicast MAC")
+	appid := flags.String("appid", "0x4000", "SV application identifier")
+	svid := flags.String("svid", "sampleSV1", "sampled-value stream identifier")
+	dataset := flags.String("dataset", "sample/LLN0$sv", "dataset reference; empty omits it")
+	sync := flags.Uint("sync", 0, "sample synchronization: 0 unsynchronized,1 local,2 global")
+	capture := flags.String("capture", "", "optional outgoing PCAP file")
+	output := flags.String("output-frame", "", "write one deterministic offline frame; do not open a network interface")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
 	if *list {
 		return cli.List(os.Stdout)
 	}
@@ -101,10 +104,4 @@ func run() error {
 		return nil
 	}
 	return err
-}
-func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
 }

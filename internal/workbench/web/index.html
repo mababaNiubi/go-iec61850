@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IEDLab · IEC 61850 Workbench</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/" class="brand"
+        ><span class="brand-mark">⌘</span><strong>IEDLab</strong
+        ><span class="brand-sub">IEC 61850 WORKBENCH</span></a
+      >
+      <div class="top-actions">
+        <span id="live-state" class="connection-state"
+          ><i></i>Workspace online</span
+        ><button id="language" class="quiet" title="Switch language">
+          中文</button
+        ><button id="import-top" class="button primary">
+          <span>＋</span><span data-i18n="import">Import SCL</span>
+        </button>
+      </div>
+    </header>
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="sidebar-heading">
+          <span data-i18n="workspace">WORKSPACE</span
+          ><button id="sample" class="text-button" data-i18n="sample">
+            Load sample
+          </button>
+        </div>
+        <nav id="model-tree" aria-label="Imported device models"></nav>
+        <div class="sidebar-bottom">
+          <span class="status-dot"></span>
+          <div>
+            <strong>Native Go runtime</strong>
+            <p data-i18n="local">Models and sessions stay in this process.</p>
+          </div>
+        </div>
+      </aside>
+      <main class="main">
+        <section class="workspace-head">
+          <div>
+            <div id="breadcrumb" class="eyebrow">WORKSPACE / OVERVIEW</div>
+            <h1 id="device-title">Build your device workspace</h1>
+            <p id="device-subtitle">
+              Import an SCL model to browse, simulate and connect.
+            </p>
+          </div>
+          <div class="head-actions">
+            <button id="connect-sim" class="button secondary hidden">
+              ↗ <span data-i18n="connectSim">Connect client</span></button
+            ><button id="simulation-toggle" class="button primary hidden">
+              <span data-i18n="start">Start simulator</span>
+            </button>
+          </div>
+        </section>
+        <div id="metrics" class="metrics hidden"></div>
+        <div class="tabs" role="tablist" aria-label="Workspace views">
+          <button class="tab active" data-tab="model" data-i18n="model">
+            Data model
+          </button>
+          <button class="tab" data-tab="goose" data-i18n="goose">
+            Datasets & GOOSE
+          </button>
+          <button class="tab" data-tab="client" data-i18n="client">
+            MMS client
+          </button>
+        </div>
+        <section id="model-view" class="view">
+          <div id="empty-state" class="empty-state">
+            <div class="empty-diagram">
+              <span>IED</span><i></i><b>SCL</b><i></i><span>CLIENT</span>
+            </div>
+            <h2 data-i18n="emptyTitle">
+              One model. A complete debugging workspace.
+            </h2>
+            <p data-i18n="emptyText">
+              Import an SCD, ICD or CID file, or load the included bay model.
+              Explore the model, edit process values and test real MMS control.
+            </p>
+            <div>
+              <button
+                id="import-empty"
+                class="button primary"
+                data-i18n="import"
+              >
+                Import SCL</button
+              ><button
+                id="sample-empty"
+                class="button secondary"
+                data-i18n="sample"
+              >
+                Load sample
+              </button>
+            </div>
+            <div class="empty-notes">
+              <span>⌑ Model exploration</span><span>⇄ MMS simulation</span
+              ><span>◉ GOOSE events</span>
+            </div>
+          </div>
+          <div id="data-workspace" class="data-workspace hidden">
+            <section class="data-panel">
+              <div class="table-toolbar">
+                <div class="search">
+                  <span>⌕</span
+                  ><input
+                    id="search"
+                    placeholder="Find a logical node, attribute or MMS name…"
+                    aria-label="Search model"
+                  />
+                </div>
+                <button id="refresh" class="icon-button" title="Refresh values">
+                  ↻
+                </button>
+              </div>
+              <div class="filterbar">
+                <div id="fc-filters" class="chips"></div>
+                <label class="small-check"
+                  ><input id="structures" type="checkbox" />
+                  <span data-i18n="structures">Structures</span></label
+                >
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th data-i18n="reference">OBJECT REFERENCE</th>
+                      <th>FC</th>
+                      <th data-i18n="type">TYPE</th>
+                      <th data-i18n="value">VALUE</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="point-rows"></tbody>
+                </table>
+              </div>
+              <div class="table-footer">
+                <span id="row-count"></span
+                ><span data-i18n="auto">Auto-refresh · 2s</span>
+              </div>
+            </section>
+            <aside class="inspector" id="inspector">
+              <div class="inspector-empty">
+                Select an attribute to inspect its value and wire address.
+              </div>
+            </aside>
+          </div>
+        </section>
+        <section id="goose-view" class="view hidden">
+          <div id="stream-content" class="stream-content"></div>
+        </section>
+        <section id="client-view" class="view hidden">
+          <form id="connect-form" class="connect-bar">
+            <div>
+              <label for="remote-address" data-i18n="endpoint"
+                >MMS ENDPOINT</label
+              ><input
+                id="remote-address"
+                value="127.0.0.1:8102"
+                placeholder="host:port"
+                required
+              />
+            </div>
+            <button class="button primary" data-i18n="connect">Connect</button
+            ><span data-i18n="clientHint"
+              >Browse a simulator or connect to an existing IED.</span
+            >
+          </form>
+          <div class="remote-layout">
+            <aside id="remote-tree" class="remote-tree">
+              <p>Connections will appear here.</p>
+            </aside>
+            <div class="remote-main">
+              <div id="remote-breadcrumb" class="eyebrow">MMS CLIENT</div>
+              <div id="remote-names" class="remote-names"></div>
+              <div id="remote-value"></div>
+            </div>
+          </div>
+        </section>
+        <section class="event-panel">
+          <div class="event-heading">
+            <div>
+              <span class="status-dot"></span
+              ><strong data-i18n="events">Event journal</strong
+              ><span id="event-count" class="count-badge">0</span>
+            </div>
+            <div>
+              <select id="event-filter" aria-label="Filter events">
+                <option value="">All activity</option>
+                <option value="model">Model</option>
+                <option value="mms">MMS</option>
+                <option value="goose">GOOSE</option>
+                <option value="control">Control</option>
+                <option value="error">Errors</option></select
+              ><button id="clear-log" class="text-button" data-i18n="clear">
+                Clear view
+              </button>
+            </div>
+          </div>
+          <div
+            id="event-log"
+            class="event-log"
+            role="log"
+            aria-label="Protocol event journal"
+          ></div>
+        </section>
+      </main>
+    </div>
+    <input
+      type="file"
+      id="file-input"
+      accept=".scd,.icd,.cid,.scl,.xml"
+      hidden
+    />
+    <dialog id="simulation-dialog">
+      <form id="simulation-form">
+        <div class="dialog-heading">
+          <div>
+            <div class="eyebrow">DEVICE SIMULATION</div>
+            <h2 data-i18n="start">Start simulator</h2>
+          </div>
+          <button
+            type="button"
+            id="close-dialog"
+            class="icon-button"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <label for="listen-address" data-i18n="listen">MMS listen address</label
+        ><input id="listen-address" value="127.0.0.1:8102" required />
+        <label for="goose-mode">GOOSE transport</label
+        ><select id="goose-mode">
+          <option value="memory">
+            Memory · encode, publish and receive locally
+          </option>
+          <option value="off">Off · MMS only</option>
+          <option value="ethernet">
+            Ethernet · publish on a selected adapter
+          </option>
+        </select>
+        <div id="interface-field" class="hidden">
+          <label for="network-interface">Ethernet interface</label
+          ><input
+            id="network-interface"
+            placeholder="Interface name or Npcap description"
+            list="interface-options"
+          />
+          <datalist id="interface-options"></datalist>
+          <p id="interface-help" class="form-note"></p>
+        </div>
+        <label class="check-label"
+          ><input id="enable-controls" type="checkbox" checked /><span
+            >Enable modeled direct controls in the simulator</span
+          ></label
+        >
+        <p class="form-note">
+          The virtual actuator updates modeled feedback. Replace its callback to
+          connect your own device logic.
+        </p>
+        <div class="dialog-footer">
+          <span id="simulation-error" class="form-error"></span
+          ><button class="button primary" data-i18n="start">
+            Start simulator
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <div id="toast" class="toast hidden" role="status"></div>
+  </body>
+</html>

@@ -15,20 +15,23 @@ import (
 	mms "github.com/mababaNiubi/go-iec61850/mms"
 )
 
-func main() {
-	address := flag.String("address", "127.0.0.1:8102", "TCP listen address")
-	flag.Parse()
+func legacyMMSServer(args []string) error {
+	flags := flag.NewFlagSet("mms-server", flag.ContinueOnError)
+	address := flags.String("address", "127.0.0.1:8102", "TCP listen address")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
 	device, err := mmsmodel.New()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	server, err := mms.NewServer(device, mms.Config{})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	listener, err := net.Listen("tcp", *address)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -42,6 +45,7 @@ func main() {
 	}()
 	fmt.Printf("MMS server listening on %s; domain=sample\n", listener.Addr())
 	if err := server.Serve(listener); err != nil {
-		log.Fatal(err)
+		return err
 	}
+	return nil
 }

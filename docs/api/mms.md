@@ -6,7 +6,7 @@ Import `github.com/mababaNiubi/go-iec61850/mms`. The first snippet is a complete
 
 ## Connect and read or write an integer
 
-Start the sample peer with `go run ./cmd/mms-server -address 127.0.0.1:8102`. Save the following program in your application, or run the [read-write example](../../examples/mms/read-write/main.go).
+Start the sample peer with `go run ./cmd/iedlab protocol mms-server -address 127.0.0.1:8102`. Save the following program in your application, or run the [read-write example](../../examples/mms/read-write/main.go).
 
 ```go
 package main

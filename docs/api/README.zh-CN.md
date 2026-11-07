@@ -6,6 +6,7 @@
 
 | 你要做什么 | 直接看这里 | 可运行代码 |
 |---|---|---|
+| 使用网页工作台或命令行调试 IED | [IEDLab 工作台](../workbench.zh-CN.md) | [应用入口](../../cmd/iedlab/main.go) |
 | 解析 SCD、查询常用路径、接入采集和控制、按 ExtRef 订阅 | [SCD 模型接入](scl.zh-CN.md) | [断路器和监控站](../../examples/scd/breaker/README.zh-CN.md) |
 | 连接设备，读写一个变量 | [MMS：连接与读写](mms.zh-CN.md#连接设备并读写一个整型变量) | [read-write](../../examples/mms/read-write/main.go) |
 | 一次读取多个变量，处理部分失败 | [MMS：批量读取](mms.zh-CN.md#一次读取多个变量) | [read-batch](../../examples/mms/read-batch/main.go) |
