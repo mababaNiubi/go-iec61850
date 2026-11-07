@@ -6,6 +6,7 @@
 
 | 你要做什么 | 直接看这里 | 可运行代码 |
 |---|---|---|
+| 按 ctlModel 控制、订阅 URCB、嵌入模拟器、解析 SV 布局 | [设备 API](ied.zh-CN.md) | [control-report](../../examples/ied/control-report/main.go)、[SCL/SV](../../examples/sv/scl/main.go) |
 | 使用网页工作台或命令行调试 IED | [IEDLab 工作台](../workbench.zh-CN.md) | [应用入口](../../cmd/iedlab/main.go) |
 | 解析 SCD、查询常用路径、接入采集和控制、按 ExtRef 订阅 | [SCD 模型接入](scl.zh-CN.md) | [断路器和监控站](../../examples/scd/breaker/README.zh-CN.md) |
 | 连接设备，读写一个变量 | [MMS：连接与读写](mms.zh-CN.md#连接设备并读写一个整型变量) | [read-write](../../examples/mms/read-write/main.go) |
@@ -20,6 +21,6 @@
 | 发布、订阅或解析采样值 | [SV API](sv.zh-CN.md) | [publish-subscribe](../../examples/sv/publish-subscribe/main.go) |
 | 定义 SV 数据的字节布局 | [SV：采样布局](sv.zh-CN.md#自己定义采样值布局) | [data-layout](../../examples/sv/data-layout/main.go) |
 
-导入路径：`github.com/mababaNiubi/go-iec61850/mms`、`data`、`goose`、`sv`、`ethernet`、`scl`。MMS与GOOSE/SV使用不同传输：MMS连TCP地址，GOOSE/SV需要Ethernet接口或实现FrameIO。
+导入路径：`github.com/mababaNiubi/go-iec61850/mms`、`data`、`goose`、`sv`、`ethernet`、`scl`、`ied`、`simulator`。MMS与GOOSE/SV使用不同传输：MMS连TCP地址，GOOSE/SV需要Ethernet接口或实现FrameIO。
 
 [示例运行方法](../../examples/README.zh-CN.md) · [现成命令行工具](../../cmd/README.zh-CN.md)

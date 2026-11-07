@@ -2,18 +2,16 @@
 package workbench
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/mababaNiubi/go-iec61850/ethernet"
-	"github.com/mababaNiubi/go-iec61850/goose"
+	clientied "github.com/mababaNiubi/go-iec61850/ied"
 	"github.com/mababaNiubi/go-iec61850/mms"
 	"github.com/mababaNiubi/go-iec61850/scl"
+	"github.com/mababaNiubi/go-iec61850/simulator"
 )
 
 func nowValue() mms.Value { return mms.UTC(time.Now()) }
@@ -25,53 +23,18 @@ type SimulationOptions struct {
 	Controls    bool   `json:"controls"`
 	Promiscuous bool   `json:"promiscuous"`
 }
+
+// The public simulator owns transport and workers. The workbench keeps only
+// UI selection, virtual actuator policy and its bounded event journal.
 type simulation struct {
+	runtime       *simulator.Runtime
 	address, mode string
-	server        *mms.Server
-	ctx           context.Context
-	cancel        context.CancelFunc
-	done          chan struct{}
-	wg            sync.WaitGroup
-	mu            sync.Mutex
-	err           error
-	links         []goose.FrameIO
+	done          <-chan struct{}
 }
 
-func (s *simulation) failure() error { s.mu.Lock(); defer s.mu.Unlock(); return s.err }
-func (s *simulation) worker(log *journal, id string, fn func() error) {
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		if err := fn(); err != nil && s.ctx.Err() == nil {
-			s.mu.Lock()
-			if s.err == nil {
-				s.err = err
-			}
-			s.mu.Unlock()
-			log.add("error", id, err.Error())
-			s.cancel()
-		}
-	}()
-}
-func (s *simulation) stop() error {
-	s.cancel()
-	// Context cancellation releases frame readers before the caller closes links.
-	s.server.Close()
-	for _, l := range s.links {
-		l.Close()
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	select {
-	case <-s.done:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	return s.server.Shutdown(ctx)
-}
+func (s *simulation) failure() error { return s.runtime.Err() }
+func (s *simulation) stop() error    { return s.runtime.Close() }
 func (m *Manager) Start(id string, opt SimulationOptions) (DeviceSummary, error) {
-	// Lock order is Manager -> device. Close cannot miss a simulator being
-	// started by a concurrent HTTP request after it takes its device snapshot.
 	m.mu.RLock()
 	d := m.devices[id]
 	if m.closed || d == nil {
@@ -80,11 +43,10 @@ func (m *Manager) Start(id string, opt SimulationOptions) (DeviceSummary, error)
 	}
 	d.mu.Lock()
 	m.mu.RUnlock()
-	var err error
 	if d.run != nil {
 		select {
 		case <-d.run.done:
-			if err = d.run.stop(); err != nil {
+			if err := d.run.stop(); err != nil {
 				d.mu.Unlock()
 				return DeviceSummary{}, err
 			}
@@ -94,103 +56,29 @@ func (m *Manager) Start(id string, opt SimulationOptions) (DeviceSummary, error)
 			return DeviceSummary{}, fmt.Errorf("%w: simulation is already running", ErrConflict)
 		}
 	}
-	if opt.Listen == "" {
-		opt.Listen = "127.0.0.1:8102"
-	}
-	if opt.GOOSE == "" {
-		opt.GOOSE = "memory"
-	}
-	if opt.GOOSE != "memory" && opt.GOOSE != "ethernet" && opt.GOOSE != "off" {
-		d.mu.Unlock()
-		return DeviceSummary{}, fmt.Errorf("choose off, memory or ethernet GOOSE")
-	}
-	srv, err := d.ied.NewServer(mms.Config{})
-	if err != nil {
-		d.mu.Unlock()
-		return DeviceSummary{}, err
-	}
-	// Log real protocol accesses, including reads from external MMS clients.
-	srv.Store = &observedStore{Store: d.ied, log: &m.log, id: id}
-	listener, err := net.Listen("tcp", opt.Listen)
-	if err != nil {
-		d.mu.Unlock()
-		return DeviceSummary{}, err
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	r := &simulation{address: listener.Addr().String(), mode: opt.GOOSE, server: srv, ctx: ctx, cancel: cancel, done: make(chan struct{})}
-	var nic *ethernet.Conn
-	if opt.GOOSE == "ethernet" {
-		if opt.Interface == "" {
-			listener.Close()
-			cancel()
-			d.mu.Unlock()
-			return DeviceSummary{}, fmt.Errorf("select an Ethernet interface")
-		}
-		nic, err = ethernet.Open(ethernet.Config{Interface: opt.Interface, EtherType: goose.EtherType, Promiscuous: opt.Promiscuous})
-		if err != nil {
-			listener.Close()
-			cancel()
-			d.mu.Unlock()
-			return DeviceSummary{}, err
-		}
-		r.links = append(r.links, nic)
-	}
 	d.controlEnabled.Store(opt.Controls)
-	d.run = r
-	r.worker(&m.log, id, func() error {
-		stop := context.AfterFunc(ctx, func() { srv.Close(); listener.Close() })
-		defer stop()
-		defer listener.Close()
-		return srv.Serve(listener)
-	})
-	for _, stream := range d.ied.Streams() {
-		g := stream
-		if opt.GOOSE == "off" {
-			break
-		}
-		var link goose.FrameIO = nic
-		source := [6]byte{2, 0, 0, 0, 0, 1}
-		if nic != nil {
-			source = nic.MAC()
-		} else {
-			link = &memoryLink{packets: make(chan []byte, 64), done: make(chan struct{})}
-			r.links = append(r.links, link)
-			sub, e := g.NewSubscriber()
-			if e != nil {
-				r.mu.Lock()
-				r.err = e
-				r.mu.Unlock()
-				cancel()
-				continue
+	runtime, err := simulator.Start(context.Background(), d.ied, simulator.Options{
+		Listen: opt.Listen, GOOSE: simulator.GOOSEMode(opt.GOOSE), Interface: opt.Interface,
+		Promiscuous: opt.Promiscuous,
+		Store:       &observedStore{Store: d.ied, log: &m.log, id: id},
+		Observe: func(event simulator.Event) {
+			if event.Err != nil {
+				m.log.add("error", id, event.Err.Error())
+				return
 			}
-			l := link
-			r.worker(&m.log, id, func() error { return sub.Run(ctx, l) })
-			r.worker(&m.log, id, func() error {
-				for {
-					select {
-					case <-ctx.Done():
-						return ctx.Err()
-					case e := <-sub.Events():
-						if e.Kind != goose.Retransmission {
-							m.log.add("goose."+e.Kind.String(), id, fmt.Sprintf("%s · st=%d sq=%d · %d values", g.Info().Reference, e.Frame.PDU.StateNumber, e.Frame.PDU.SequenceNumber, len(e.Frame.PDU.Values)))
-						}
-					}
-				}
-			})
-		}
-		l := link
-		r.worker(&m.log, id, func() error { return g.Run(ctx, l, source) })
+			if e := event.GOOSE; e != nil {
+				m.log.add(event.Kind, id, fmt.Sprintf("%s · st=%d sq=%d · %d values", event.Stream, e.Frame.PDU.StateNumber, e.Frame.PDU.SequenceNumber, len(e.Frame.PDU.Values)))
+			}
+		},
+	})
+	if err != nil {
+		d.controlEnabled.Store(false)
+		d.mu.Unlock()
+		return DeviceSummary{}, err
 	}
-	go func() {
-		r.wg.Wait()
-		// Wait for MMS connection handlers too. Close releases blocked TCP reads.
-		finish, stop := context.WithTimeout(context.Background(), 5*time.Second)
-		defer stop()
-		srv.Shutdown(finish)
-		close(r.done)
-	}()
+	d.run = &simulation{runtime: runtime, address: runtime.Address(), mode: string(runtime.GOOSEMode()), done: runtime.Done()}
 	d.mu.Unlock()
-	m.log.add("simulation.start", id, fmt.Sprintf("MMS listening on %s · GOOSE %s", r.address, r.mode))
+	m.log.add("simulation.start", id, fmt.Sprintf("MMS listening on %s · GOOSE %s", runtime.Address(), runtime.GOOSEMode()))
 	return d.summary(), nil
 }
 func (m *Manager) Stop(id string) error {
@@ -322,16 +210,14 @@ func (m *Manager) Operate(ctx context.Context, id, ref string, on bool) error {
 	if err != nil {
 		return err
 	}
-	client, err := mms.Dial(ctx, dialAddress(r.address), d.ied.ClientConfig())
+	client, err := clientied.Dial(ctx, dialAddress(r.address), clientied.Config{MMS: d.ied.ClientConfig(), Origin: clientied.Origin{Category: 2, ID: []byte("IEDLab")}})
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	value, err := (scl.Command{Value: on, Number: uint8(d.controlNumber.Add(1)), OriginCategory: 2, OriginID: []byte("IEDLab"), Time: time.Now(), InterlockCheck: true}).MMSValue()
-	if err != nil {
-		return err
-	}
-	if err = client.Write(ctx, n, value); err != nil {
+	parts := strings.Split(n.Item, "$")
+	reference := n.Domain + "/" + parts[0] + "." + strings.Join(parts[2:len(parts)-1], ".")
+	if _, err = client.Operate(ctx, reference, mms.Boolean(on), clientied.ControlOptions{InterlockCheck: true}); err != nil {
 		m.log.add("control.denied", id, err.Error())
 		return err
 	}
@@ -375,31 +261,3 @@ func (s *observedStore) Write(ctx context.Context, a mms.VariableAccess, v mms.V
 	s.log.add("mms.write", s.id, message)
 	return err
 }
-
-type memoryLink struct {
-	packets chan []byte
-	done    chan struct{}
-	once    sync.Once
-}
-
-func (l *memoryLink) ReadFrame(ctx context.Context) ([]byte, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-l.done:
-		return nil, net.ErrClosed
-	case b := <-l.packets:
-		return b, nil
-	}
-}
-func (l *memoryLink) WriteFrame(ctx context.Context, b []byte) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-l.done:
-		return net.ErrClosed
-	case l.packets <- bytes.Clone(b):
-		return nil
-	}
-}
-func (l *memoryLink) Close() error { l.once.Do(func() { close(l.done) }); return nil }

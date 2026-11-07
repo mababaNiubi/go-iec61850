@@ -94,3 +94,7 @@ func MakeBits() (mms.Value, error) {
 ```
 
 SV `seqData` uses an application-defined byte layout without MMS type tags. See [custom SV layouts](sv.md#define-a-custom-sample-layout).
+
+## Device-level integration
+
+See the [public device API](ied.md) for ctlModel-based controls, URCB reports, embedded simulation, typed component paths, SCL-defined SV layouts and shared GOOSE/SV receivers.

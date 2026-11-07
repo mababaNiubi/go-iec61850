@@ -14,7 +14,7 @@ go run ./cmd/iedlab serve -http 127.0.0.1:8080
 
 ## 用 SCD 启动设备和监控
 
-从当前工作树运行 `go run ./examples/scd/breaker`，可以看到断路器 MMS 采集、闭锁、分合闸以及 GOOSE 反馈。`go run ./cmd/iedlab inspect -file internal/sample/bay.scd` 可离线列出接入点。SCD 集成随 v1.1.0 发布，使用 `go get github.com/mababaNiubi/go-iec61850@v1.1.0` 安装。[SCD API 和常用路径](docs/api/scl.zh-CN.md) · [设备与监控示例](examples/scd/breaker/README.zh-CN.md)
+从当前工作树运行 `go run ./examples/scd/breaker`，可以看到断路器 MMS 采集、闭锁、分合闸以及 GOOSE 反馈。`go run ./cmd/iedlab inspect -file internal/sample/bay.scd` 可离线列出接入点。SCD 集成随 v1.1.0 发布，使用 `go get github.com/mababaNiubi/go-iec61850@v1.2.0` 安装。[SCD API 和常用路径](docs/api/scl.zh-CN.md) · [设备与监控示例](examples/scd/breaker/README.zh-CN.md)
 
 ## 我想连接设备，读写一个变量
 
@@ -53,6 +53,7 @@ go run ./examples/mms/read-write
 
 | 想做什么 | 文档 |
 |---|---|
+| 设备控制、URCB 订阅、嵌入模拟器和 SCL 定义的 SV 布局 | [设备接入 API](docs/api/ied.zh-CN.md) |
 | 读写变量、批量读取、数组/结构、目录、命名列表、报告、服务端 | [MMS API](docs/api/mms.zh-CN.md) |
 | 把MMS Value转换成Go整数、布尔、浮点、字符串、数组或时间 | [值与类型](docs/api/data.zh-CN.md) |
 | 发布状态量，数据变化后更新，订阅并判断TAL失效 | [GOOSE API](docs/api/goose.zh-CN.md) |
@@ -64,9 +65,9 @@ go run ./examples/mms/read-write
 
 - `examples/`：一目录一个业务场景，每个main.go直接展示API调用和关键注释。MMS默认本机回环，其余使用内存链路，均不向真实网卡发包。
 - `cmd/iedlab/`：统一的 `serve`、`simulate`、`inspect` 和 `protocol` 命令。
-- `internal/workbench/`：应用运行逻辑、HTTP API 和嵌入式前端。
+- `internal/workbench/`：工作区、HTTP API 和嵌入式前端；协议生命周期使用公开 `simulator` 包。
 - `internal/sample/`：工作台和示例共用的 SCL 文件。
-- `mms/`、`data/`、`goose/`、`sv/`、`ethernet/`、`scl/`：应用实际导入的库。
+- `mms/`、`data/`、`goose/`、`sv/`、`ethernet/`、`scl/`、`ied/`、`simulator/`：应用实际导入的库。
 - `_local/`：被Git忽略的C对照、标准资料、报告和产物。
 
 ## 构建与验证
@@ -83,4 +84,4 @@ bash scripts/test.sh --race --examples
 
 工具输出到`_local/bin/<系统>-<架构>/`，生产构建使用CGO_ENABLED=0和trimpath。Windows真实网卡需要Npcap，Linux需要raw socket权限，详见 [平台说明](docs/platforms.zh-CN.md)。[开发与验证](docs/development.zh-CN.md) 记录本地C对照入口。
 
-当前提供 MMS 核心、普通 L2 GOOSE/SV 和[限定范围的 SCD 模型映射](docs/api/scl.zh-CN.md)，尚未实现完整ACSI/SCL、报告控制块、R-GOOSE/R-SV、PTP或安全扩展。软件采用 **GPL-3.0-or-later**，见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。
+v1.2.0 提供 MMS、普通 L2 GOOSE/SV、设备控制客户端、URCB 订阅、嵌入模拟器和[限定范围的 SCL 模型映射](docs/api/ied.zh-CN.md)。完整 ACSI/SCL、RCB 服务端自动生成、BRCB 重放、R-GOOSE/R-SV、PTP 和安全扩展仍超出当前范围。软件采用 **GPL-3.0-or-later**，见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。

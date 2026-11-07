@@ -51,7 +51,7 @@ func NewServer(store Store, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{Store: store, cfg: cfg, Identity: Identity{"Go MMS", "Native Go MMS", "1.1.0"}, raw: make(map[net.Conn]struct{}), lists: make(map[ObjectName]NamedList)}, nil
+	return &Server{Store: store, cfg: cfg, Identity: Identity{"Go MMS", "Native Go MMS", "1.2.0"}, raw: make(map[net.Conn]struct{}), lists: make(map[ObjectName]NamedList)}, nil
 }
 func (s *Server) Serve(listener net.Listener) error {
 	s.mu.Lock()

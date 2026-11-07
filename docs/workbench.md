@@ -110,3 +110,5 @@ go run ./cmd/iedlab protocol goose-subscriber -input-frame _local/frames/goose.b
 ```
 
 The build scripts also produce the single `iedlab` executable. The former six protocol commands are grouped under `iedlab protocol`, retaining their diagnostic flags. `scdinspect` becomes `iedlab inspect`. Individual library examples continue to demonstrate focused API calls.
+
+The transport lifecycle is implemented in the public [simulator package](../simulator/runtime.go); client-side control uses the public [ied package](api/ied.md). Other programs can import them without importing `internal/workbench`.

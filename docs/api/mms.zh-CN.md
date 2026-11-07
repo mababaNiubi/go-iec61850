@@ -281,3 +281,7 @@ func ReadWithDeadline(parent context.Context, client *mms.Client, name mms.Objec
 | 释放/中止 | `Conclude(ctx) error`、`Close() error` |
 
 [Value类型转换](data.zh-CN.md) · [API目录](README.zh-CN.md)
+
+## 设备级接入
+
+[公开设备 API](ied.zh-CN.md) 包含按 ctlModel 控制、URCB 报告、嵌入模拟器、结构字段路径、SCL 定义的 SV 布局和 GOOSE/SV 多流接收方法。

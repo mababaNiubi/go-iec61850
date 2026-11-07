@@ -180,4 +180,8 @@ func PublishSamplesOnInterface(ctx context.Context, interfaceName string) error 
 
 Optional fields use pointers to distinguish absence from an explicit zero, including SampleRate, SampleMode, RefreshTime, and GMIdentity. The current SampleMode representation follows the two-byte reference publisher profile. The pinned C reference subscriber accepts only one byte; the resulting asymmetry is recorded in the local interoperability material. Support has not been validated against every standard profile.
 
-The package implements ordinary Layer 2 SV. It does not supply PTP, hardware acquisition, SCL/MSVCB configuration, or R-SV. See [platform support](../platforms.md) for multicast access and VLAN fidelity.
+The package implements ordinary Layer 2 SV. Typed layouts and profiles can be loaded through `scl.SVStream`. It does not supply PTP, hardware acquisition, online SVCB reservation, or R-SV. See [platform support](../platforms.md) for multicast access and VLAN fidelity.
+
+## Device-level integration
+
+See the [public device API](ied.md) for ctlModel-based controls, URCB reports, embedded simulation, typed component paths, SCL-defined SV layouts and shared GOOSE/SV receivers.

@@ -23,6 +23,8 @@ The commands list access points and their server role, print matching points and
 
 | Application signal | SCL path within LD instance `CTRL` | FC | MMS item in domain `BayIEDCTRL` |
 |---|---|---|---|
+| `system.SVStream(ref)` / `system.SVStreams(ied, ap)` | Resolve SV profiles and original-type byte layouts without building an MMS server |
+| `stream.Layout()` / `stream.Values(ctx)` | Compile GOOSE member paths and read one coherent ordered dataset |
 | Active power in watts | `MMXU1.TotW.mag.f` | MX | `MMXU1$MX$TotW$mag$f` |
 | Measurement quality / time | `MMXU1.TotW.q` / `MMXU1.TotW.t` | MX | `MMXU1$MX$TotW$q` / `MMXU1$MX$TotW$t` |
 | Actual breaker position | `XCBR1.Pos.stVal` | ST | `XCBR1$ST$Pos$stVal` |
@@ -122,3 +124,9 @@ The monitor looks up `input, err := ied.Input("StationHMI", "S1", "breakerPositi
 The runtime supports the selected server's LDevices, LN prefixes, ordinary non-array DO/SDO/DA/BDA templates, nested structures, enums, instance values, explicit FCDA targets (whole DO or attribute) and static ordinary Layer 2 GOOSE. The control profile is immediate SPC/DPC direct-with-normal-security with a six-field Oper. Arrays, setting groups, SBO/enhanced control, RCB reporting and online GoCB reconfiguration are outside this profile. Other sections such as substation topology are descriptive. The parser has a 16 MiB input limit and validates the modeled references. The runtime uses signed eight-bit enumerations and leaves unspecified initial enum values at zero. For full schema validation, use the XSD matching the SCD edition.
 
 The fixture was validated against the IEC 61850-6 SCL 2007B4 XSD. SCL structure follows [IEC 61850-6 Ed. 2.1](https://webstore.iec.ch/en/publication/63319). The MMS/GOOSE mapping follows [IEC 61850-8-1](https://webstore.iec.ch/en/publication/66585). The reference implementation's [control services](https://support.mz-automation.de/doc/libiec61850/c/latest/group__IEC61850__CLIENT__CONTROL.html) provide a comparison for immediate direct control.
+
+## Device-level integration
+
+See the [public device API](ied.md) for ctlModel-based controls, URCB reports, embedded simulation, typed component paths, SCL-defined SV layouts and shared GOOSE/SV receivers.
+
+The preceding runtime limits apply to the modeled MMS/GOOSE server. The independent `SVStream` path also supports DA/BDA arrays, original SV scalar widths and SVCB metadata; it does not instantiate that server. Client-side control modes 1..4 and URCB subscriptions are provided by `ied`.

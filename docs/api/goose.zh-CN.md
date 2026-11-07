@@ -135,3 +135,7 @@ func PublishOnInterface(ctx context.Context, interfaceName string) error {
 订阅也把Conn传给ListenEvents。Windows接口不投递目标组播时，显式配置`Promiscuous:true`；Linux需要raw socket权限。已有工具见 [cmd](../../cmd/README.zh-CN.md)。内核/驱动的VLAN保真与软件调度边界见 [平台说明](../platforms.zh-CN.md)。
 
 普通 L2 GOOSE 的 SCD 静态工程配置、GSEControl 和订阅方 ExtRef 接入见 [SCD API](scl.zh-CN.md)。重启恢复需显式AllowRestartAfterTimeout；它不提供防重放认证能力。
+
+## 设备级接入
+
+[公开设备 API](ied.zh-CN.md) 包含按 ctlModel 控制、URCB 报告、嵌入模拟器、结构字段路径、SCL 定义的 SV 布局和 GOOSE/SV 多流接收方法。

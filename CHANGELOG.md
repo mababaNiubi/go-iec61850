@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 - 2026-11-07
+
+- Add public `ied` clients for all four immediate control models, correlated enhanced command termination, and bounded URCB subscriptions with one unsolicited-message dispatcher.
+- Add public `simulator` runtime and in-memory frame links; IEDLab now composes these public APIs.
+- Resolve multicast SV profiles from the shared SCL parser, preserving original basic types, FCDA/declaration order, checked layouts, and engineered metadata.
+- Add shared GOOSE/SV receivers, structured component access, explicit IEC Quality flags, and annotated integration examples.
+- Verify the extracted APIs through the edge-ai gateway against independent libIEC61850 controls, URCB, GOOSE and SV peers.
 
 - Consolidate diagnostics into the `iedlab` CLI with a browser workbench, SCL import, model browsing, typed value editing, MMS/GOOSE simulation, remote MMS client and live event journal.
 - Share the sample SCL between the application and examples, and document debugging and driver customization in English and Simplified Chinese.

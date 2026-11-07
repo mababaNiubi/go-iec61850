@@ -49,14 +49,15 @@ type logicalDevice struct {
 	Nodes []logicalNode `xml:"LN"`
 }
 type logicalNode struct {
-	Class   string     `xml:"lnClass,attr"`
-	Inst    string     `xml:"inst,attr"`
-	Prefix  string     `xml:"prefix,attr"`
-	Type    string     `xml:"lnType,attr"`
-	Objects []instance `xml:"DOI"`
-	Sets    []setXML   `xml:"DataSet"`
-	Blocks  []blockXML `xml:"GSEControl"`
-	Inputs  []extRef   `xml:"Inputs>ExtRef"`
+	Class   string         `xml:"lnClass,attr"`
+	Inst    string         `xml:"inst,attr"`
+	Prefix  string         `xml:"prefix,attr"`
+	Type    string         `xml:"lnType,attr"`
+	Objects []instance     `xml:"DOI"`
+	Sets    []setXML       `xml:"DataSet"`
+	Blocks  []blockXML     `xml:"GSEControl"`
+	Sampled []svControlXML `xml:"SampledValueControl"`
+	Inputs  []extRef       `xml:"Inputs>ExtRef"`
 }
 
 func (n logicalNode) name() string { return n.Prefix + n.Class + n.Inst }
@@ -99,6 +100,7 @@ type doType struct {
 	CDC   string        `xml:"cdc,attr"`
 	Sub   []declaration `xml:"SDO"`
 	Attrs []attribute   `xml:"DA"`
+	order []orderedAttribute
 }
 type daType struct {
 	ID    string      `xml:"id,attr"`
@@ -163,10 +165,11 @@ type gse struct {
 	Max     *timing `xml:"MaxTime"`
 }
 type connection struct {
-	IED     string  `xml:"iedName,attr"`
-	AP      string  `xml:"apName,attr"`
-	Address []param `xml:"Address>P"`
-	GSE     []gse   `xml:"GSE"`
+	IED     string   `xml:"iedName,attr"`
+	AP      string   `xml:"apName,attr"`
+	Address []param  `xml:"Address>P"`
+	GSE     []gse    `xml:"GSE"`
+	SMV     []smvXML `xml:"SMV"`
 }
 
 // Parse reads one SCL document (up to 16 MiB). Foreign extension elements
@@ -296,8 +299,13 @@ func (r *sclTokens) Token() (xml.Token, error) {
 			}
 			// SCL attributes are unqualified. Ignore namespace declarations and extensions.
 			attrs := e.Attr[:0]
+			seen := make(map[string]bool)
 			for _, a := range e.Attr {
 				if a.Name.Space == "" && a.Name.Local != "xmlns" {
+					if seen[a.Name.Local] {
+						return nil, fmt.Errorf("scl: duplicate XML attribute %q", a.Name.Local)
+					}
+					seen[a.Name.Local] = true
 					attrs = append(attrs, a)
 				}
 			}

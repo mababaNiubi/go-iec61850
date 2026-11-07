@@ -8,6 +8,8 @@ Run all commands from the repository root.
 
 | Task | Source | Command |
 |---|---|---|
+| Control an IED, inspect acknowledgement and subscribe to URCB | [Device client](ied/control-report/README.md) | `go run ./examples/ied/control-report` |
+| Decode engineered SV samples without hard-coded offsets | [SCL/SV](sv/scl/README.md) | `go run ./examples/sv/scl` |
 | Integrate a modeled device and a station from SCD | [Breaker model, driver, and monitor](scd/breaker/README.md) | `go run ./examples/scd/breaker` |
 | Connect, read an integer, write, and read it back | [MMS read/write](mms/read-write/main.go) | `go run ./examples/mms/read-write` |
 | Batch access, partial failures, and array/structure selection | [MMS batch reads](mms/read-batch/main.go) | `go run ./examples/mms/read-batch` |

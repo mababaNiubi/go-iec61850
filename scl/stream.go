@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mababaNiubi/go-iec61850/data"
 	"github.com/mababaNiubi/go-iec61850/goose"
 	"github.com/mababaNiubi/go-iec61850/mms"
 )
@@ -42,6 +43,30 @@ func (g *Stream) Info() StreamInfo {
 		i.Members = append(i.Members, a.Name)
 	}
 	return i
+}
+
+// Layout returns independent ordered member declarations suitable for generic
+// field access and template compatibility checks across station instances.
+func (g *Stream) Layout() goose.Layout {
+	layout := goose.Layout{}
+	for i, variable := range g.set.Variables {
+		name := variable.Name
+		domain := "absolute:" + name.Domain
+		if name.Domain == g.name.Domain {
+			domain = "local"
+		} else if relative, ok := strings.CutPrefix(name.Domain, g.ied.name); ok {
+			domain = "relative:" + relative
+		}
+		layout.Members = append(layout.Members, goose.Member{Name: name.Item, Domain: domain, Type: data.CloneType(g.types[i])})
+	}
+	return layout
+}
+
+// Values returns one coherent model snapshot in FCDA order.
+func (g *Stream) Values(ctx context.Context) ([]mms.Value, error) {
+	g.ied.mu.RLock()
+	defer g.ied.mu.RUnlock()
+	return g.values(ctx)
 }
 func (d *IED) Streams() []*Stream {
 	out := make([]*Stream, 0, len(d.streams))

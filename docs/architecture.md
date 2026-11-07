@@ -9,9 +9,11 @@ The library is split by protocol. Applications can import and use MMS or a frame
 | Shared data | `data` | Internal BER helpers |
 | MMS | `mms` | `data`, `internal/iso`, `internal/ber` |
 | Layer 2 GOOSE | `goose` | `data`, `internal/ber` |
-| Layer 2 SV | `sv` | `internal/ber`; raw application layout for seqData |
-| Engineered device model | `scl` | `encoding/xml`, `mms`, `goose` and `data` |
+| Layer 2 SV | `sv` | `data`, `internal/ber`; typed SV layouts and profiles |
+| Engineered device model | `scl` | `encoding/xml`, `mms`, `goose`, `sv` and `data` |
 | Optional Ethernet access | `ethernet` | Standard library and native operating-system interfaces |
+| Device client | `ied` | `mms`, `data`; control and report semantics |
+| Embedded simulation | `simulator` | `scl`, `mms`, `goose`, `ethernet`; owned transports |
 | Application examples | `examples` | Public library and example-only helpers |
 
 `internal/iso` implements TPKT, COTP, Session, Presentation, and ACSE. `mms` uses it to exchange MMS PDUs. The client dispatches concurrent responses by InvokeID; the server maps requests to a `Store`. `Model` is a ready-to-use, concurrency-safe in-memory store.
@@ -22,7 +24,7 @@ GOOSE/SV `Frame` types hold Ethernet fields; PDU/ASDU types hold protocol conten
 
 Applications close their own links, Ethernet connections, and listeners according to each API's ownership rules. MMS requests take contexts. Examples cancel and wait for background work before returning. GOOSE/SV event queues are bounded and report overflow explicitly.
 
-`cmd/iedlab` is the single executable. Its browser and terminal entry points share `internal/workbench`, which owns SCL sessions, MMS clients, simulator lifetimes, typed value conversion and the embedded frontend. Advanced protocol diagnostics reuse `cmd/internal/` helpers. Each `examples/` entry demonstrates one API task; `examples/internal/` supplies a local MMS peer and an in-memory link. Applications use public packages directly.
+`cmd/iedlab` is the single executable. Its browser and terminal entry points share `internal/workbench`, which owns workspace state, typed JSON conversion and the embedded frontend. Its transport lifecycle uses public `simulator`; its controls use public `ied`. Advanced protocol diagnostics reuse `cmd/internal/` helpers. Each `examples/` entry demonstrates one API task; `examples/internal/` supplies a local MMS peer and an in-memory link. Applications use public packages directly.
 
 Go unit tests are kept with their packages. Reference C code, cross-language tests, and standards are stored in ignored `_local/` directories; they are not production dependencies and are outside the root module's `go test ./...` scope.
 

@@ -6,6 +6,8 @@
 
 | 我要学习 | 代码 | 运行 |
 |---|---|---|
+| 控制 IED、检查确认结果、订阅 URCB | [设备客户端](ied/control-report/README.zh-CN.md) | `go run ./examples/ied/control-report` |
+| 按 SCL 解码 SV，无需写死偏移 | [SCL/SV](sv/scl/README.zh-CN.md) | `go run ./examples/sv/scl` |
 | 根据 SCD 接入设备采集、控制和监控订阅 | [断路器模型和两端代码](scd/breaker/README.zh-CN.md) | `go run ./examples/scd/breaker` |
 | 连接，读一个整数，写入，再读回 | [MMS读写](mms/read-write/main.go) | `go run ./examples/mms/read-write` |
 | 批量读取、逐项失败、数组/结构选择 | [MMS批量](mms/read-batch/main.go) | `go run ./examples/mms/read-batch` |

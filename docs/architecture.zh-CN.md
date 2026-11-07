@@ -9,9 +9,11 @@
 | 共享数据 | data | 内部BER工具 |
 | MMS | mms | data、internal/iso、internal/ber |
 | 二层GOOSE | goose | data、internal/ber |
-| 二层SV | sv | internal/ber；seqData使用原始布局 |
-| 工程设备模型 | scl | encoding/xml、mms、goose、data |
+| 二层SV | sv | data、internal/ber；SV 原始类型布局与流配置 |
+| 工程设备模型 | scl | encoding/xml、mms、goose、sv、data |
 | 可选接入 | ethernet | 标准库和操作系统原始网卡API |
+| 设备客户端 | ied | mms、data；控制与报告语义 |
+| 嵌入模拟器 | simulator | scl、mms、goose、ethernet；传输生命周期 |
 | 使用示例 | examples | 公开库、共享示例模型和示例专用辅助包 |
 
 `internal/iso`负责TPKT/COTP/Session/Presentation/ACSE；`mms`只通过该层收发MMS PDU。Client按InvokeID分派并发响应，Server把请求映射到Store。Model是可直接使用的并发安全内存Store。
@@ -22,6 +24,6 @@ GOOSE/SV的Frame保存完整Ethernet字段，PDU/ASDU保存协议内容。Encode
 
 应用创建的FrameIO、网卡连接和Listener需要按各API约定关闭。MMS请求使用context；示例在退出时取消并等待后台任务。GOOSE/SV事件队列有界，溢出显式报错，不静默丢弃。
 
-`cmd/iedlab` 是统一入口，浏览器与命令行共用 `internal/workbench` 的 SCL 会话、客户端、模拟器生命周期和值转换。前端静态文件嵌入 Go 程序，底层诊断复用 `cmd/internal/` 辅助。`examples/`每个入口只展示一个API场景，`examples/internal/`仅提供可选的本机MMS对端和内存链路。应用直接使用公开库，无需引用这些内部演示包。
+`cmd/iedlab` 是统一入口，浏览器与命令行共用 `internal/workbench` 的工作区和值转换；模拟器生命周期使用公开 `simulator`，控制调用公开 `ied`。前端静态文件嵌入 Go 程序，底层诊断复用 `cmd/internal/` 辅助。`examples/`每个入口只展示一个API场景，`examples/internal/`仅提供可选的本机MMS对端和内存链路。应用直接使用公开库，无需引用这些内部演示包。
 
 生产Go单元测试随包提交。参考C代码、跨语言测试和标准文件在Git忽略的 `_local/` 中，既不参与生产依赖，也不参与根模块的 `go test ./...`。

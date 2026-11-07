@@ -281,3 +281,7 @@ A client supports concurrent reads and writes, dispatches responses by InvokeID,
 | Graceful release/abort | `Conclude(ctx) error`, `Close() error` |
 
 [Value conversion](data.md) · [API guide](README.md)
+
+## Device-level integration
+
+See the [public device API](ied.md) for ctlModel-based controls, URCB reports, embedded simulation, typed component paths, SCL-defined SV layouts and shared GOOSE/SV receivers.

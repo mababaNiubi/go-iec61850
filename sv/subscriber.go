@@ -61,6 +61,7 @@ type SubscriptionConfig struct {
 	// Timeout is a local receive timeout, default one second; SV has no TAL.
 	Timeout                  time.Duration
 	AllowUnsynchronized      bool
+	RequireGlobalSync        bool // require smpSynch=2, in addition to the ordinary checks
 	AllowRestartAfterTimeout bool // requires expired state and sample count zero
 	Clock                    Clock
 	EventBuffer              int
@@ -199,7 +200,7 @@ func (s *Subscriber) Process(f Frame) ([]Event, error) {
 	results := make([]Event, 0, len(matching))
 	var gaps, missing uint64
 	for i, a := range matching {
-		if uint32(a.SampleCount) >= s.cfg.CounterModulus || (!s.cfg.AllowUnsynchronized && a.SampleSync == 0) || (s.cfg.ConfRev != 0 && a.ConfRev != s.cfg.ConfRev) || (s.cfg.DataLength != 0 && len(a.Data) != s.cfg.DataLength) {
+		if uint32(a.SampleCount) >= s.cfg.CounterModulus || (!s.cfg.AllowUnsynchronized && a.SampleSync == 0) || (s.cfg.RequireGlobalSync && a.SampleSync != 2) || (s.cfg.ConfRev != 0 && a.ConfRev != s.cfg.ConfRev) || (s.cfg.DataLength != 0 && len(a.Data) != s.cfg.DataLength) {
 			return s.rejectLocked(ErrConfiguration)
 		}
 		if has && !sameStreamConfiguration(a, previous) {

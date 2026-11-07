@@ -23,6 +23,8 @@ go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied StationHMI -ap S1
 
 | 业务信号 | LD 实例 `CTRL` 内的对象路径 | FC | MMS 域 `BayIEDCTRL` 下的 item |
 |---|---|---|---|
+| `system.SVStream(ref)` / `system.SVStreams(ied, ap)` | 无需构建 MMS 服务端即可解析 SV 流和原始类型布局 |
+| `stream.Layout()` / `stream.Values(ctx)` | 定位 GOOSE 成员路径，读取有序一致数据集 |
 | 有功功率，单位 W | `MMXU1.TotW.mag.f` | MX | `MMXU1$MX$TotW$mag$f` |
 | 测量品质 / 采集时间 | `MMXU1.TotW.q` / `MMXU1.TotW.t` | MX | `MMXU1$MX$TotW$q` / `MMXU1$MX$TotW$t` |
 | 断路器实际位置 | `XCBR1.Pos.stVal` | ST | `XCBR1$ST$Pos$stVal` |
@@ -122,3 +124,9 @@ func closeBreaker(ctx context.Context, client *mms.Client, oper mms.ObjectName, 
 当前支持所选接入点的逻辑设备、带前缀的 LN、非数组 DO/SDO/DA/BDA 模板、嵌套结构、枚举和实例初值。支持明确指定目标的 FCDA（整 DO 或属性）、普通二层 GOOSE 静态配置、六字段 Oper 的 SPC/DPC 普通安全直接控制。数组、定值组、SBO/增强控制、RCB 报告、在线 GoCB 重配置超出该实现范围。一次接线拓扑属于描述信息。解析输入限制为 16 MiB，会检查实际参与映射的引用。枚举按有符号 8 位值处理，未给初值的枚举从 0 开始。完整模式校验应使用与 SCD 版次匹配的 XSD。
 
 示例文件已通过 IEC 61850-6 SCL 2007B4 XSD 校验。SCL 对应 [IEC 61850-6 第 2.1 版](https://webstore.iec.ch/en/publication/63319)，MMS/GOOSE 映射对应 [IEC 61850-8-1](https://webstore.iec.ch/en/publication/66585)。可对照 libiec61850 的[客户端控制接口](https://support.mz-automation.de/doc/libiec61850/c/latest/group__IEC61850__CLIENT__CONTROL.html)。
+
+## 设备级接入
+
+[公开设备 API](ied.zh-CN.md) 包含按 ctlModel 控制、URCB 报告、嵌入模拟器、结构字段路径、SCL 定义的 SV 布局和 GOOSE/SV 多流接收方法。
+
+上述运行模型限制针对建模 MMS/GOOSE 服务端。独立的 `SVStream` 路径还支持 DA/BDA 数组、SV 原始类型宽度和 SVCB 元数据，无需实例化该服务端。客户端四种控制模型和 URCB 订阅由 `ied` 提供。

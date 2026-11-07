@@ -57,7 +57,6 @@ type device struct {
 	run                 *simulation
 	controlEnabled      atomic.Bool
 	interlocked         atomic.Bool
-	controlNumber       atomic.Uint32
 }
 type Control struct {
 	Reference string `json:"reference"`

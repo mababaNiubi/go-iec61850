@@ -110,3 +110,5 @@ go run ./cmd/iedlab protocol goose-subscriber -input-frame _local/frames/goose.b
 ```
 
 构建脚本现在输出一个 `iedlab` 程序。原来的六个协议命令统一归入 `iedlab protocol`，保留诊断参数。`scdinspect` 合并为 `iedlab inspect`。独立 API 示例继续供学习库调用。
+
+协议生命周期已移入公开的 [simulator 包](../simulator/runtime.go)，客户端控制使用公开的 [ied 包](api/ied.zh-CN.md)。其他程序可以直接导入，无需引用 `internal/workbench`。

@@ -6,6 +6,7 @@ Choose the task you are implementing. Each guide explains the objects, parameter
 
 | Task | API documentation | Runnable source |
 |---|---|---|
+| Control by ctlModel, subscribe to URCB, embed a simulator or import SV layouts | [Device API](ied.md) | [control-report](../../examples/ied/control-report/main.go), [SCL/SV](../../examples/sv/scl/main.go) |
 | Use a browser workspace or headless CLI for IED debugging | [IEDLab workbench](../workbench.md) | [Application entry point](../../cmd/iedlab/main.go) |
 | Load an SCD, find model paths, bind acquisition and controls, subscribe by ExtRef | [SCD model integration](scl.md) | [breaker IED and station](../../examples/scd/breaker/README.md) |
 | Connect and read or write a variable | [MMS: connect and read/write](mms.md#connect-and-read-or-write-an-integer) | [read-write](../../examples/mms/read-write/main.go) |
@@ -20,6 +21,6 @@ Choose the task you are implementing. Each guide explains the objects, parameter
 | Publish, receive, or decode sampled values | [SV API](sv.md) | [publish-subscribe](../../examples/sv/publish-subscribe/main.go) |
 | Define the SV payload byte layout | [SV: custom layout](sv.md#define-a-custom-sample-layout) | [data-layout](../../examples/sv/data-layout/main.go) |
 
-Package paths start with `github.com/mababaNiubi/go-iec61850/`: import `mms`, `data`, `goose`, `sv`, `ethernet`, or `scl` as needed. MMS connects to a TCP address. GOOSE and SV require an Ethernet interface or an application implementation of `FrameIO`.
+Package paths start with `github.com/mababaNiubi/go-iec61850/`: import `mms`, `data`, `goose`, `sv`, `ethernet`, `scl`, `ied`, or `simulator` as needed. MMS connects to a TCP address. GOOSE and SV require an Ethernet interface or an application implementation of `FrameIO`.
 
 [Running the examples](../../examples/README.md) · [Command-line tools](../../cmd/README.md)

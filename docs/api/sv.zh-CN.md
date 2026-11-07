@@ -180,4 +180,8 @@ func PublishSamplesOnInterface(ctx context.Context, interfaceName string) error 
 
 可选字段用指针区分缺省与显式0，例如SampleRate、SampleMode、RefreshTime、GMIdentity。当前SampleMode采用两字节参考publisher profile；固定C版本自身subscriber只接受一字节，相关不对称对照记录在本地资料中。这不是已完成所有标准profile验证的声明。
 
-本库当前提供普通L2 SV，不实现PTP、硬件采集、SCL/MSVCB配置或R-SV。接口组播权限与VLAN保真见 [平台说明](../platforms.zh-CN.md)。
+本库提供普通 L2 SV，可通过 `scl.SVStream` 载入 SCL 布局与流配置；不提供 PTP、硬件采集、在线 SVCB 预留或 R-SV。接口组播权限与VLAN保真见 [平台说明](../platforms.zh-CN.md)。
+
+## 设备级接入
+
+[公开设备 API](ied.zh-CN.md) 包含按 ctlModel 控制、URCB 报告、嵌入模拟器、结构字段路径、SCL 定义的 SV 布局和 GOOSE/SV 多流接收方法。

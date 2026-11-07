@@ -94,3 +94,7 @@ func MakeBits() (mms.Value, error) {
 ```
 
 SV的seqData使用原始采样布局，不使用这些MMS类型标签。见 [SV布局API](sv.zh-CN.md#自己定义采样值布局)。
+
+## 设备级接入
+
+[公开设备 API](ied.zh-CN.md) 包含按 ctlModel 控制、URCB 报告、嵌入模拟器、结构字段路径、SCL 定义的 SV 布局和 GOOSE/SV 多流接收方法。
