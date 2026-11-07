@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mababaNiubi/go-iec61850/data"
@@ -229,11 +230,17 @@ func (o *Control) Operate(ctx context.Context, value data.Value, options Control
 		}
 		result.Selected = true
 	}
+	return o.execute(ctx, command, c.next, result)
+}
+
+// execute is called with controlToken held by Operate or a selected operation.
+func (o *Control) execute(ctx context.Context, command data.Value, number uint8, result ControlResult) (ControlResult, error) {
+	c := o.client
 	var pending *termination
 	if o.model >= DirectEnhanced {
 		_, indices, _ := data.ResolveComponent(o.spec, "origin")
 		origin, _ := data.ValueAt(command, indices)
-		pending = &termination{name: o.name, value: command, number: c.next, origin: origin, result: make(chan error, 1)}
+		pending = &termination{name: o.name, value: command, number: number, origin: origin, result: make(chan error, 1)}
 		c.mu.Lock()
 		c.pending = pending
 		c.mu.Unlock()
@@ -260,6 +267,107 @@ func (o *Control) Operate(ctx context.Context, value data.Value, options Control
 		}
 	}
 	return result, nil
+}
+
+// Selection is a single-use SBO reservation. Complete it with Operate or
+// Cancel. The IED's configured selection timeout also releases an abandoned
+// reservation. Other controls on the association remain independently usable.
+type Selection struct {
+	control *Control
+	command data.Value
+	number  uint8
+	mu      sync.Mutex
+	used    bool
+}
+
+func (o *Control) Select(ctx context.Context, value data.Value, options ControlOptions) (*Selection, error) {
+	if o.model != SBONormal && o.model != SBOEnhanced {
+		return nil, fmt.Errorf("%w: control has no selection model", ErrRejected)
+	}
+	c := o.client
+	if err := c.acquire(ctx, c.controlToken); err != nil {
+		return nil, err
+	}
+	defer func() { <-c.controlToken }()
+	c.next++
+	command, err := BuildCommand(o.spec, value, c.origin, c.next, options)
+	if err != nil {
+		return nil, err
+	}
+	base := strings.TrimSuffix(o.name.Item, "$Oper")
+	if o.model == SBONormal {
+		v, e := c.Read(ctx, mms.DomainName(o.name.Domain, base+"$SBO"))
+		if e != nil {
+			return nil, e
+		}
+		token, e := v.StringValue()
+		if e != nil || (token != o.name.Domain+"/"+base && token != o.name.Domain+"/"+base+"$SBO") {
+			return nil, fmt.Errorf("%w: selection declined", ErrRejected)
+		}
+	} else {
+		name := mms.DomainName(o.name.Domain, base+"$SBOw")
+		spec, e := c.GetVariableAccessAttributes(ctx, name)
+		if e != nil {
+			return nil, e
+		}
+		selection, e := BuildCommand(spec, value, c.origin, c.next, options)
+		if e != nil {
+			return nil, e
+		}
+		if e = c.Write(ctx, name, selection); e != nil {
+			return nil, e
+		}
+	}
+	return &Selection{control: o, command: command, number: c.next}, nil
+}
+func (s *Selection) Operate(ctx context.Context) (ControlResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := ControlResult{Model: s.control.model, Selected: true}
+	if s.used {
+		return result, fmt.Errorf("%w: selection already consumed", ErrRejected)
+	}
+	c := s.control.client
+	if err := c.acquire(ctx, c.controlToken); err != nil {
+		return result, err
+	}
+	defer func() { <-c.controlToken }()
+	s.used = true
+	return s.control.execute(ctx, s.command, s.number, result)
+}
+func (s *Selection) Cancel(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.used {
+		return fmt.Errorf("ied: selection already consumed")
+	}
+	c := s.control.client
+	name := mms.DomainName(s.control.name.Domain, strings.TrimSuffix(s.control.name.Item, "$Oper")+"$Cancel")
+	spec, err := c.GetVariableAccessAttributes(ctx, name)
+	if err != nil {
+		return err
+	}
+	var values []data.Value
+	for _, field := range spec.Components {
+		_, path, e := data.ResolveComponent(s.control.spec, field.Name)
+		if e != nil {
+			return e
+		}
+		v, e := data.ValueAt(s.command, path)
+		if e != nil {
+			return e
+		}
+		values = append(values, v)
+	}
+	command := data.Structure(values...)
+	if err = data.ValidateValue(spec, command); err != nil {
+		return err
+	}
+	err = c.Write(ctx, name, command)
+	if err == nil {
+		s.used = true
+	}
+	return err
 }
 
 type termination struct {

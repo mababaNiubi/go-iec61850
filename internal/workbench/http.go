@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/mababaNiubi/go-iec61850/ethernet"
+	"github.com/mababaNiubi/go-iec61850/ied"
+	"github.com/mababaNiubi/go-iec61850/internal/sample"
 )
 
 //go:embed web/*
@@ -24,8 +26,41 @@ var webFiles embed.FS
 // have bounded bodies/deadlines. HTTP never accepts arbitrary host file paths.
 func (m *Manager) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/stations", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, m.Stations()) })
+	mux.HandleFunc("POST /api/models/{id}/station", func(w http.ResponseWriter, r *http.Request) {
+		v, err := m.StartStation(r.PathValue("id"))
+		respond(w, v, err)
+	})
+	mux.HandleFunc("DELETE /api/models/{id}/station", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, map[string]bool{"ok": true}, m.StopStation(r.PathValue("id")))
+	})
+	mux.HandleFunc("GET /api/models/{id}/catalog", func(w http.ResponseWriter, r *http.Request) {
+		catalog, err := m.Catalog(r.PathValue("id"), r.URL.Query().Get("ied"), r.URL.Query().Get("ap"))
+		respond(w, catalog, err)
+	})
+	mux.HandleFunc("POST /api/connections/{id}/check", func(w http.ResponseWriter, r *http.Request) {
+		var q struct{ Model, IED, AP string }
+		if !decode(w, r, &q) {
+			return
+		}
+		result, err := m.CheckRemote(r.Context(), r.PathValue("id"), q.Model, q.IED, q.AP)
+		respond(w, result, err)
+	})
+	mux.HandleFunc("POST /api/connections/{id}/reports", func(w http.ResponseWriter, r *http.Request) {
+		var q struct {
+			Domain, Item string
+			Options      ied.ReportOptions
+		}
+		if !decode(w, r, &q) {
+			return
+		}
+		respond(w, map[string]bool{"ok": true}, m.SubscribeRemote(r.Context(), r.PathValue("id"), q.Domain, q.Item, q.Options))
+	})
+	mux.HandleFunc("DELETE /api/connections/{id}/reports", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, map[string]bool{"ok": true}, m.StopRemoteReport(r.Context(), r.PathValue("id"), r.URL.Query().Get("domain"), r.URL.Query().Get("item")))
+	})
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"documents": m.Documents(), "devices": m.Devices(), "connections": m.Connections(), "events": m.log.snapshot()})
+		writeJSON(w, 200, map[string]any{"documents": m.Documents(), "devices": m.Devices(), "connections": m.Connections(), "events": m.log.snapshot(), "stations": m.Stations()})
 	})
 	mux.HandleFunc("POST /api/models", func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<20))
@@ -45,6 +80,10 @@ func (m *Manager) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /api/models/sample", func(w http.ResponseWriter, r *http.Request) {
 		doc, err := m.Import("bay.scd", SampleSCL())
+		respond(w, doc, err)
+	})
+	mux.HandleFunc("POST /api/models/station-sample", func(w http.ResponseWriter, r *http.Request) {
+		doc, err := m.Import("station.scd", sample.StationSCL())
 		respond(w, doc, err)
 	})
 	mux.HandleFunc("GET /api/models/{id}/inputs", func(w http.ResponseWriter, r *http.Request) {

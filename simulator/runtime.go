@@ -36,8 +36,10 @@ type Options struct {
 	GOOSE       GOOSEMode // empty defaults to memory
 	Interface   string
 	Promiscuous bool
-	Store       mms.Store   // optional decorator, e.g. protocol tracing around the IED
-	Observe     func(Event) // concurrent callback; must return promptly, never call Stop here
+	Store       mms.Store       // optional decorator, e.g. protocol tracing around the IED
+	Observe     func(Event)     // concurrent callback; must return promptly, never call Stop here
+	Bus         *MemoryBus      // optional shared software station bus for multiple runtimes
+	SV          []SampledValues // software sources published on Bus
 }
 
 // Runtime owns its listener, accepted associations, links and protocol workers.
@@ -119,15 +121,24 @@ func Start(ctx context.Context, model *scl.IED, options Options) (*Runtime, erro
 		if nic != nil {
 			source = nic.MAC()
 		} else {
-			memory, _ := NewMemoryLink(64)
-			link = memory
-			r.links = append(r.links, memory)
+			if options.Bus != nil {
+				port, err := options.Bus.Open(4096)
+				if err != nil {
+					rollback()
+					return nil, err
+				}
+				link = port
+			} else {
+				memory, _ := NewMemoryLink(64)
+				link = memory
+			}
+			r.links = append(r.links, link)
 			subscriber, err := stream.NewSubscriber()
 			if err != nil {
 				rollback()
 				return nil, err
 			}
-			tasks = append(tasks, func() error { return subscriber.Run(runCtx, memory) }, func() error {
+			tasks = append(tasks, func() error { return subscriber.Run(runCtx, link) }, func() error {
 				for {
 					select {
 					case <-runCtx.Done():
@@ -142,6 +153,31 @@ func Start(ctx context.Context, model *scl.IED, options Options) (*Runtime, erro
 		}
 		l := link
 		tasks = append(tasks, func() error { return stream.Run(runCtx, l, source) })
+	}
+	for _, source := range options.SV {
+		if options.Bus == nil {
+			rollback()
+			return nil, fmt.Errorf("simulator: runtime SV requires a shared MemoryBus")
+		}
+		if _, _, _, err := prepareSV(source); err != nil {
+			rollback()
+			return nil, err
+		}
+		port, err := options.Bus.Open(4096)
+		if err != nil {
+			rollback()
+			return nil, err
+		}
+		r.links = append(r.links, port)
+		// A publisher has no reason to read its own copy of a bus broadcast.
+		// Drain it to keep the endpoint bounded during a long simulation.
+		tasks = append(tasks, func() error { return RunSampledValues(runCtx, port, source) }, func() error {
+			for {
+				if _, err := port.ReadFrame(runCtx); err != nil {
+					return err
+				}
+			}
+		})
 	}
 	// All fallible setup completes before launching workers. A setup error can
 	// never leave an unreachable listener or half-started publication running.

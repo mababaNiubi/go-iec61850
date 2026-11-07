@@ -69,7 +69,19 @@ func (d *IED) configureCommunication(ap accessPoint) error {
 	for k := range routes {
 		return fmt.Errorf("Communication/GSE %s/%s has no matching GSEControl", k[0], k[1])
 	}
-	return nil
+	for _, ld := range ap.Server.Devices {
+		if err := d.addSettings(ld.Inst, ld.Zero[0].Settings); err != nil {
+			return err
+		}
+		for _, ln := range append([]logicalNode{ld.Zero[0]}, ld.Nodes...) {
+			for _, block := range ln.Reports {
+				if err := d.addReports(ld.Inst, ln.name(), block); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return d.loadSettingInitial()
 }
 
 func (d *IED) addSet(ld, ln string, s setXML) error {
@@ -82,18 +94,18 @@ func (d *IED) addSet(ld, ln string, s setXML) error {
 	}
 	set := mms.NamedList{Name: name}
 	for i, m := range s.Members {
-		if m.Index != "" || m.LD == "" || m.Class == "" || m.DO == "" {
-			return fmt.Errorf("dataset %s FCDA %d requires an explicit, unindexed target", name, i)
+		if m.LD == "" || m.Class == "" || m.DO == "" {
+			return fmt.Errorf("dataset %s FCDA %d requires an explicit target", name, i)
 		}
 		path := m.DO
 		if m.DA != "" {
 			path += "." + m.DA
 		}
-		n, err := d.Lookup(m.LD, m.Prefix+m.Class+m.Inst, m.FC, path)
+		access, err := d.memberAccess(m, path)
 		if err != nil {
 			return fmt.Errorf("dataset %s FCDA %d: %w", name, i, err)
 		}
-		set.Variables = append(set.Variables, mms.Access(n))
+		set.Variables = append(set.Variables, access)
 	}
 	d.sets[name] = set
 	return nil
@@ -185,7 +197,11 @@ func (d *IED) addStream(ld string, b blockXML, g gse) error {
 	stream.frame = goose.Frame{Destination: [6]byte(mac), APPID: uint16(app), VLAN: vlan,
 		PDU: goose.PDU{GoCBRef: n.String(), DataSet: set.Name.String(), GoID: b.GoID, ConfRev: b.Revision}}
 	for _, v := range set.Variables {
-		stream.types = append(stream.types, d.types[v.Name])
+		spec, err := mms.SelectedType(d.types[v.Name], v.Selection)
+		if err != nil {
+			return err
+		}
+		stream.types = append(stream.types, spec)
 	}
 	if _, err := stream.NewSubscriber(); err != nil {
 		return err

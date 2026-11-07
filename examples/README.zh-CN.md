@@ -1,5 +1,7 @@
 # 按业务场景看示例
 
+[完整软件站点](scd/station/README.zh-CN.md) 展示 SV 采集、MMS 控制与报告、GOOSE 工程输入的联动。[定值示例](ied/settings/README.zh-CN.md) 展示普通 SP、备用组编辑确认和激活。
+
 [English](README.md) | 简体中文
 
 每个目录只讲一个场景，直接打开main.go。代码中的中文注释说明调用顺序、字段含义、错误和资源关闭；API参数详解在 [API手册](../docs/api/README.zh-CN.md)。

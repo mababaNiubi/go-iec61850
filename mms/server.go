@@ -19,13 +19,17 @@ type Server struct {
 	Identity      Identity
 	Status        Status
 	OnAssociation func(*Association)
-	cfg           Config
-	mu            sync.Mutex
-	listener      net.Listener
-	closed        bool
-	raw           map[net.Conn]struct{}
-	lists         map[ObjectName]NamedList
-	wg            sync.WaitGroup
+	// OnRun runs background services until Close or Serve returns. Configure it
+	// before Serve. It must return when its context is cancelled.
+	OnRun    func(context.Context)
+	cfg      Config
+	mu       sync.Mutex
+	listener net.Listener
+	closed   bool
+	raw      map[net.Conn]struct{}
+	lists    map[ObjectName]NamedList
+	wg       sync.WaitGroup
+	cancel   context.CancelFunc
 }
 
 // Association identifies a server-side association. Association-scoped lists
@@ -51,7 +55,7 @@ func NewServer(store Store, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{Store: store, cfg: cfg, Identity: Identity{"Go MMS", "Native Go MMS", "1.2.0"}, raw: make(map[net.Conn]struct{}), lists: make(map[ObjectName]NamedList)}, nil
+	return &Server{Store: store, cfg: cfg, Identity: Identity{"Go MMS", "Native Go MMS", "1.3.0"}, raw: make(map[net.Conn]struct{}), lists: make(map[ObjectName]NamedList)}, nil
 }
 func (s *Server) Serve(listener net.Listener) error {
 	s.mu.Lock()
@@ -60,7 +64,14 @@ func (s *Server) Serve(listener net.Listener) error {
 		return ErrClosed
 	}
 	s.listener = listener
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	if s.OnRun != nil {
+		s.wg.Add(1)
+		go func() { defer s.wg.Done(); s.OnRun(ctx) }()
+	}
 	s.mu.Unlock()
+	defer cancel()
 	for {
 		raw, err := listener.Accept()
 		if err != nil {
@@ -99,6 +110,9 @@ func (s *Server) Close() error {
 		return nil
 	}
 	s.closed = true
+	if s.cancel != nil {
+		s.cancel()
+	}
 	if s.listener != nil {
 		s.listener.Close()
 	}
@@ -122,6 +136,19 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 func (a *Association) Parameters() Parameters   { return a.params }
 func (a *Association) Context() context.Context { return a.ctx }
+
+// Close aborts an association whose background service cannot continue.
+func (a *Association) Close() error { return a.conn.Close() }
+
+type associationContextKey struct{}
+
+// AssociationFromContext identifies the caller of a server Store operation.
+// A local acquisition context has no association. Pointer identity is stable
+// for the lifetime of one connection, including concurrent confirmed requests.
+func AssociationFromContext(ctx context.Context) *Association {
+	a, _ := ctx.Value(associationContextKey{}).(*Association)
+	return a
+}
 func (a *Association) send(data []byte) error {
 	ctx, cancel := context.WithTimeout(a.ctx, a.server.cfg.RequestTimeout)
 	defer cancel()
@@ -215,7 +242,8 @@ func (s *Server) serveConnection(raw net.Conn) {
 		workers.Add(1)
 		go func(m envelope) {
 			defer workers.Done()
-			response := a.dispatch(m)
+			actions := &responseActions{}
+			response := a.dispatch(m, actions)
 			// Retire the request while serializing the response and admission
 			// state, before the peer can reuse a window slot or conclude.
 			a.mu.Lock()
@@ -225,6 +253,7 @@ func (s *Server) serveConnection(raw net.Conn) {
 			if err != nil {
 				conn.Close()
 			}
+			actions.run(a.ctx, err)
 		}(msg)
 	}
 }
@@ -285,9 +314,11 @@ func join(parts [][]byte) []byte {
 	return out
 }
 
-func (a *Association) dispatch(m envelope) []byte {
+func (a *Association) dispatch(m envelope, actions *responseActions) []byte {
 	ctx, cancel := context.WithTimeout(a.ctx, a.server.cfg.RequestTimeout)
 	defer cancel()
+	ctx = context.WithValue(ctx, associationContextKey{}, a)
+	ctx = context.WithValue(ctx, responseContextKey{}, actions)
 	id, e := m.id, m.service
 	success := func(data []byte) []byte {
 		response := confirmed(0xa1, id, data)

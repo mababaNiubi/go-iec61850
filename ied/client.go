@@ -29,6 +29,7 @@ type Client struct {
 	subscriptions             map[mms.ObjectName]*ReportSubscription
 	pending                   *termination
 	controlToken, reportToken chan struct{}
+	settingToken              chan struct{}
 	next                      uint8 // protected by controlToken, including the selection phase
 	dispatched                chan struct{}
 }
@@ -62,6 +63,7 @@ func Wrap(raw *mms.Client, origin Origin) (*Client, error) {
 	}
 	origin.ID = append([]byte(nil), origin.ID...)
 	c := &Client{raw: raw, origin: origin, subscriptions: make(map[mms.ObjectName]*ReportSubscription), controlToken: make(chan struct{}, 1), reportToken: make(chan struct{}, 1), dispatched: make(chan struct{})}
+	c.settingToken = make(chan struct{}, 1)
 	go c.dispatch()
 	return c, nil
 }

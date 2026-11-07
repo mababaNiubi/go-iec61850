@@ -5,8 +5,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
+	"github.com/mababaNiubi/go-iec61850/ied"
 	"github.com/mababaNiubi/go-iec61850/mms"
 )
 
@@ -18,7 +20,10 @@ type ConnectionSummary struct {
 }
 type connection struct {
 	ConnectionSummary
-	client *mms.Client
+	client        *mms.Client
+	services      *ied.Client
+	mu            sync.Mutex
+	subscriptions map[mms.ObjectName]*ied.ReportSubscription
 }
 
 // Connect uses the optional engineering model for ISO addressing. The context
@@ -42,7 +47,12 @@ func (m *Manager) Connect(ctx context.Context, address, deviceID string) (Connec
 		return ConnectionSummary{}, err
 	}
 	id := digest([]byte(address + time.Now().Format(time.RFC3339Nano)))
-	c := &connection{ConnectionSummary: ConnectionSummary{id, address, identity, "connected"}, client: peer}
+	services, err := ied.Wrap(peer, ied.Origin{})
+	if err != nil {
+		peer.Close()
+		return ConnectionSummary{}, err
+	}
+	c := &connection{ConnectionSummary: ConnectionSummary{id, address, identity, "connected"}, client: peer, services: services, subscriptions: map[mms.ObjectName]*ied.ReportSubscription{}}
 	m.mu.Lock()
 	if m.closed || len(m.connections) >= 16 {
 		m.mu.Unlock()
@@ -91,7 +101,7 @@ func (m *Manager) Disconnect(id string) error {
 	if c == nil {
 		return ErrNotFound
 	}
-	c.client.Close()
+	c.services.Close()
 	m.log.add("client.disconnect", id, "MMS association closed")
 	return nil
 }

@@ -50,7 +50,7 @@ func (d *IED) configureEndpoint(p map[string]string) error {
 		{"OSI-TSEL", &d.iso.RemoteTSelector, 4}, {"OSI-SSEL", &d.iso.RemoteSSelector, 8}, {"OSI-PSEL", &d.iso.RemotePSelector, 8},
 	} {
 		if val, ok := p[field.key]; ok {
-			out, err := hex.DecodeString(val)
+			out, err := hex.DecodeString(strings.Join(strings.Fields(val), ""))
 			if err != nil || len(out) == 0 || len(out) > field.max {
 				return fmt.Errorf("invalid %s %q", field.key, val)
 			}
@@ -58,7 +58,7 @@ func (d *IED) configureEndpoint(p map[string]string) error {
 		}
 	}
 	if title, ok := p["OSI-AP-Title"]; ok {
-		arcs := strings.Split(title, ",")
+		arcs := strings.FieldsFunc(title, func(r rune) bool { return r == ',' || r == '.' || r == ' ' || r == '\t' || r == '\n' || r == '\r' })
 		for _, arc := range arcs {
 			n, err := strconv.ParseUint(arc, 10, 32)
 			if err != nil {

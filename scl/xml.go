@@ -26,10 +26,14 @@ type System struct {
 }
 
 type document struct {
-	XMLName     xml.Name     `xml:"http://www.iec.ch/61850/2003/SCL SCL"`
-	IEDs        []xmlIED     `xml:"IED"`
-	Connections []connection `xml:"Communication>SubNetwork>ConnectedAP"`
-	Types       templates    `xml:"DataTypeTemplates"`
+	XMLName     xml.Name        `xml:"http://www.iec.ch/61850/2003/SCL SCL"`
+	Version     string          `xml:"version,attr"`
+	Revision    string          `xml:"revision,attr"`
+	Release     string          `xml:"release,attr"`
+	Substations []substationXML `xml:"Substation"`
+	IEDs        []xmlIED        `xml:"IED"`
+	Connections []connection    `xml:"Communication>SubNetwork>ConnectedAP"`
+	Types       templates       `xml:"DataTypeTemplates"`
 }
 type xmlIED struct {
 	Name string        `xml:"name,attr"`
@@ -49,25 +53,28 @@ type logicalDevice struct {
 	Nodes []logicalNode `xml:"LN"`
 }
 type logicalNode struct {
-	Class   string         `xml:"lnClass,attr"`
-	Inst    string         `xml:"inst,attr"`
-	Prefix  string         `xml:"prefix,attr"`
-	Type    string         `xml:"lnType,attr"`
-	Objects []instance     `xml:"DOI"`
-	Sets    []setXML       `xml:"DataSet"`
-	Blocks  []blockXML     `xml:"GSEControl"`
-	Sampled []svControlXML `xml:"SampledValueControl"`
-	Inputs  []extRef       `xml:"Inputs>ExtRef"`
+	Class    string         `xml:"lnClass,attr"`
+	Inst     string         `xml:"inst,attr"`
+	Prefix   string         `xml:"prefix,attr"`
+	Type     string         `xml:"lnType,attr"`
+	Objects  []instance     `xml:"DOI"`
+	Sets     []setXML       `xml:"DataSet"`
+	Blocks   []blockXML     `xml:"GSEControl"`
+	Sampled  []svControlXML `xml:"SampledValueControl"`
+	Inputs   []extRef       `xml:"Inputs>ExtRef"`
+	Reports  []reportXML    `xml:"ReportControl"`
+	Settings *settingXML    `xml:"SettingControl"`
 }
 
 func (n logicalNode) name() string { return n.Prefix + n.Class + n.Inst }
 
 type instance struct {
-	Name   string     `xml:"name,attr"`
-	Index  string     `xml:"ix,attr"`
-	Values []initial  `xml:"Val"`
-	SDI    []instance `xml:"SDI"`
-	DAI    []instance `xml:"DAI"`
+	Name      string     `xml:"name,attr"`
+	Index     string     `xml:"ix,attr"`
+	ValueKind string     `xml:"valKind,attr"`
+	Values    []initial  `xml:"Val"`
+	SDI       []instance `xml:"SDI"`
+	DAI       []instance `xml:"DAI"`
 }
 type initial struct {
 	Text  string `xml:",chardata"`
@@ -80,15 +87,20 @@ type templates struct {
 	Enum []enumType `xml:"EnumType"`
 }
 type declaration struct {
-	Name  string `xml:"name,attr"`
-	Type  string `xml:"type,attr"`
-	Count string `xml:"count,attr"`
+	Name        string `xml:"name,attr"`
+	Type        string `xml:"type,attr"`
+	Count       string `xml:"count,attr"`
+	Description string `xml:"desc,attr"`
 }
 type attribute struct {
 	declaration
-	Basic  string    `xml:"bType,attr"`
-	FC     string    `xml:"fc,attr"`
-	Values []initial `xml:"Val"`
+	Basic     string    `xml:"bType,attr"`
+	FC        string    `xml:"fc,attr"`
+	Values    []initial `xml:"Val"`
+	Dchg      bool      `xml:"dchg,attr"`
+	Qchg      bool      `xml:"qchg,attr"`
+	Dupd      bool      `xml:"dupd,attr"`
+	ValueKind string    `xml:"valKind,attr"`
 }
 type lnType struct {
 	ID      string        `xml:"id,attr"`
@@ -96,11 +108,12 @@ type lnType struct {
 	Objects []declaration `xml:"DO"`
 }
 type doType struct {
-	ID    string        `xml:"id,attr"`
-	CDC   string        `xml:"cdc,attr"`
-	Sub   []declaration `xml:"SDO"`
-	Attrs []attribute   `xml:"DA"`
-	order []orderedAttribute
+	ID          string        `xml:"id,attr"`
+	CDC         string        `xml:"cdc,attr"`
+	Description string        `xml:"desc,attr"`
+	Sub         []declaration `xml:"SDO"`
+	Attrs       []attribute   `xml:"DA"`
+	order       []orderedAttribute
 }
 type daType struct {
 	ID    string      `xml:"id,attr"`
@@ -186,6 +199,9 @@ func Parse(r io.Reader) (*System, error) {
 	if len(raw) > limit {
 		return nil, fmt.Errorf("scl: document exceeds 16 MiB")
 	}
+	// XML permits a UTF-8 BOM at byte zero. Consume only that signature;
+	// non-whitespace text elsewhere must still be rejected by sclTokens.
+	raw = bytes.TrimPrefix(raw, []byte{0xef, 0xbb, 0xbf})
 	reader := &sclTokens{dec: xml.NewDecoder(bytes.NewReader(raw))}
 	dec := xml.NewTokenDecoder(reader)
 	var s System
@@ -211,7 +227,7 @@ func Parse(r io.Reader) (*System, error) {
 			return nil, fmt.Errorf("scl: multiple document elements")
 		}
 	}
-	if len(s.doc.IEDs) == 0 {
+	if len(s.doc.IEDs) == 0 && len(s.doc.Substations) == 0 {
 		return nil, fmt.Errorf("scl: no IED declarations")
 	}
 	if s.lnTypes, err = index(s.doc.Types.LN, func(t lnType) string { return t.ID }); err != nil {

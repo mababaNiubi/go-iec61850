@@ -289,6 +289,9 @@ type VariableAccess struct {
 type Selection struct {
 	Component string
 	Index     *uint32
+	// Path selects nested components/array elements in order. Use either Path
+	// or the legacy single Component/Index fields, never both representations.
+	Path []Selector
 }
 
 func Access(n ObjectName) VariableAccess { return VariableAccess{Name: n} }
@@ -308,16 +311,12 @@ func encodeAccesses(accesses []VariableAccess) ([]byte, error) {
 			return nil, err
 		}
 		fields := [][]byte{ber.Encode(0xa0, encodeName(a.Name))}
-		if a.Selection.Component != "" && a.Selection.Index != nil {
-			return nil, fmt.Errorf("mms: only one alternate selector is supported")
+		steps, err := a.Selection.Steps()
+		if err != nil {
+			return nil, err
 		}
-		if a.Selection.Component != "" {
-			if !validIdentifier(a.Selection.Component) {
-				return nil, ErrProtocol
-			}
-			fields = append(fields, ber.Encode(0xa5, ber.Encode(0x81, []byte(a.Selection.Component))))
-		} else if a.Selection.Index != nil {
-			fields = append(fields, ber.Encode(0xa5, ber.Uint(0x82, uint64(*a.Selection.Index))))
+		if len(steps) > 0 {
+			fields = append(fields, ber.Encode(0xa5, encodeSelection(steps)))
 		}
 		items = append(items, ber.Encode(0x30, fields...))
 	}
@@ -357,20 +356,15 @@ func decodeAccesses(e ber.Element) ([]VariableAccess, error) {
 			if err != nil || len(rest) != 0 {
 				return nil, ObjectAccessUnsupported
 			}
-			switch sel.Tag {
-			case 0x81:
-				a.Selection.Component = string(sel.Bytes)
-				if !validIdentifier(a.Selection.Component) {
-					return nil, ErrProtocol
-				}
-			case 0x82:
-				v, err := unsigned(sel)
-				if err != nil {
-					return nil, err
-				}
-				a.Selection.Index = &v
-			default:
-				return nil, ObjectAccessUnsupported
+			steps, err := decodeSelection(sel, 0)
+			if err != nil {
+				return nil, err
+			}
+			if len(steps) == 1 {
+				a.Selection.Component = steps[0].Component
+				a.Selection.Index = steps[0].Index
+			} else {
+				a.Selection.Path = steps
 			}
 		}
 		out = append(out, a)

@@ -43,6 +43,19 @@
               <FCDA ldInst="CTRL" lnClass="XCBR" lnInst="1" doName="Pos" daName="q" fc="ST"/>
               <FCDA ldInst="CTRL" lnClass="XCBR" lnInst="1" doName="Pos" daName="t" fc="ST"/>
             </DataSet>
+            <DataSet name="dsEvents">
+              <FCDA ldInst="CTRL" lnClass="XCBR" lnInst="1" doName="Pos" fc="ST"/>
+            </DataSet>
+            <ReportControl name="events" datSet="dsPos" confRev="1" buffered="false" indexed="true">
+              <TrgOps dchg="true" qchg="true" gi="true"/>
+              <OptFields seqNum="true" timeStamp="true" reasonCode="true" dataSet="true" configRef="true"/>
+              <RptEnabled max="1"/>
+            </ReportControl>
+            <ReportControl name="history" datSet="dsEvents" confRev="1" buffered="true" indexed="true">
+              <TrgOps dchg="true" qchg="true" gi="true"/>
+              <OptFields seqNum="true" timeStamp="true" reasonCode="true" dataSet="true" configRef="true" entryID="true" bufOvfl="true"/>
+              <RptEnabled max="1"/>
+            </ReportControl>
             <GSEControl name="gcbPos" type="GOOSE" appID="BayPosition" datSet="dsPos" confRev="1">
               <IEDName>StationHMI</IEDName>
             </GSEControl>

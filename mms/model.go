@@ -4,6 +4,7 @@ package mms
 import (
 	"context"
 	"fmt"
+	"github.com/mababaNiubi/go-iec61850/data"
 	"sort"
 	"strings"
 	"sync"
@@ -202,37 +203,16 @@ func selected(v Variable, path []int, sel Selection) (Value, TypeSpec, []int, er
 		value = items[i]
 		t = t.Components[i].Type
 	}
-	if sel.Component != "" {
-		for _, part := range strings.Split(sel.Component, "$") {
-			idx := -1
-			for i, c := range t.Components {
-				if c.Name == part {
-					idx = i
-					break
-				}
-			}
-			if idx < 0 {
-				return Value{}, TypeSpec{}, nil, ObjectNonExistent
-			}
-			items, _ := value.Elements()
-			value = items[idx]
-			t = t.Components[idx].Type
-			path = append(path, idx)
-		}
+	selected, indices, err := selectionPath(t, sel)
+	if err != nil {
+		return Value{}, TypeSpec{}, nil, err
 	}
-	if sel.Index != nil {
-		if t.Kind != KindArray || t.Element == nil {
-			return Value{}, TypeSpec{}, nil, ObjectAccessUnsupported
-		}
-		items, _ := value.Elements()
-		if uint64(*sel.Index) >= uint64(len(items)) {
-			return Value{}, TypeSpec{}, nil, InvalidAddress
-		}
-		idx := int(*sel.Index)
-		value = items[idx]
-		t = *t.Element
-		path = append(path, idx)
+	value, err = data.ValueAt(value, indices)
+	if err != nil {
+		return Value{}, TypeSpec{}, nil, InvalidAddress
 	}
+	t = selected
+	path = append(path, indices...)
 	return value, t, path, nil
 }
 func (m *Model) Type(ctx context.Context, n ObjectName) (TypeSpec, error) {

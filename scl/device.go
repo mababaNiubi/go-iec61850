@@ -25,15 +25,22 @@ type IED struct {
 	sets              map[mms.ObjectName]mms.NamedList
 	streams           map[mms.ObjectName]*Stream
 	// Protects change notifications and coherent multi-point snapshots.
-	mu       sync.RWMutex
-	feeds    map[*feed]struct{}
-	handlers map[mms.ObjectName]*control
+	mu            sync.RWMutex
+	feeds         map[*feed]struct{}
+	handlers      map[mms.ObjectName]*control
+	reports       map[mms.ObjectName]*reportBlock
+	triggers      map[mms.ObjectName]byte
+	setpoints     map[mms.ObjectName]*setpoint
+	settings      map[string]*settingGroup
+	groupInitial  []groupInitial
+	readOnlyPaths []string
 }
 
 func newIED(s *System, ied, ap string) *IED {
 	return &IED{system: s, name: ied, ap: ap, model: mms.NewModel(), domains: map[string]string{}, types: map[mms.ObjectName]mms.TypeSpec{},
 		binary: map[mms.ObjectName]bool{}, sets: map[mms.ObjectName]mms.NamedList{}, streams: map[mms.ObjectName]*Stream{},
-		feeds: make(map[*feed]struct{}), handlers: map[mms.ObjectName]*control{}}
+		feeds: make(map[*feed]struct{}), handlers: map[mms.ObjectName]*control{}, reports: map[mms.ObjectName]*reportBlock{},
+		triggers: map[mms.ObjectName]byte{}, setpoints: map[mms.ObjectName]*setpoint{}, settings: map[string]*settingGroup{}}
 }
 
 // MMSAddress returns host:port from ConnectedAP, or an empty string for an
@@ -112,6 +119,9 @@ func (d *IED) DataSets() []mms.NamedList {
 	result := make([]mms.NamedList, 0, len(d.sets))
 	for _, set := range d.sets {
 		set.Variables = append([]mms.VariableAccess(nil), set.Variables...)
+		for i := range set.Variables {
+			set.Variables[i].Selection = set.Variables[i].Selection.Clone()
+		}
 		result = append(result, set)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name.String() < result[j].Name.String() })
@@ -127,6 +137,9 @@ func (d *IED) DataSet(ld, ln, name string) (mms.NamedList, error) {
 		return mms.NamedList{}, fmt.Errorf("scl: unknown dataset %s", n)
 	}
 	set.Variables = append([]mms.VariableAccess(nil), set.Variables...)
+	for i := range set.Variables {
+		set.Variables[i].Selection = set.Variables[i].Selection.Clone()
+	}
 	return set, nil
 }
 
@@ -141,6 +154,8 @@ func (d *IED) NewServer(cfg mms.Config) (*mms.Server, error) {
 			return nil, err
 		}
 	}
+	s.OnRun = d.runReports
+	s.OnAssociation = d.serveAssociation
 	return s, nil
 }
 
@@ -155,10 +170,19 @@ func (d *IED) Update(ctx context.Context, changes ...mms.Assignment) error {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.commitLocked(ctx, changes...)
+}
+
+// commitLocked is the single publication boundary for acquisition, SP writes
+// and activated settings. Call with d.mu held so reports/GOOSE observe the same
+// immutable before/after snapshot, including changes initiated over MMS.
+func (d *IED) commitLocked(ctx context.Context, changes ...mms.Assignment) error {
+	previous := d.reportValuesLocked()
 	if err := d.model.SetValues(ctx, changes...); err != nil {
 		return err
 	}
 	if len(changes) > 0 {
+		d.captureReportsLocked(previous, changes)
 		// The acquisition is committed. Publishers take ordered immutable snapshots
 		// before the next writer can change the model.
 		for f := range d.feeds {
@@ -176,7 +200,30 @@ func (d *IED) Type(ctx context.Context, n mms.ObjectName) (mms.TypeSpec, error) 
 	return d.model.Type(ctx, n)
 }
 func (d *IED) Read(ctx context.Context, a mms.VariableAccess) (mms.Value, error) {
+	if value, handled, err := d.readService(ctx, a); handled {
+		return value, err
+	}
 	return d.model.Read(ctx, a)
+}
+
+// ReadSnapshot reads named values under one model lock. It is useful when a
+// sampled-value source needs a coherent multi-member acquisition image.
+func (d *IED) ReadSnapshot(ctx context.Context, names ...mms.ObjectName) ([]mms.Value, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	values := make([]mms.Value, 0, len(names))
+	for _, name := range names {
+		access := mms.Access(name)
+		value, handled, err := d.readServiceLocked(ctx, access)
+		if !handled {
+			value, err = d.model.Read(ctx, access)
+		}
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, nil
 }
 
 var _ mms.Store = (*IED)(nil)

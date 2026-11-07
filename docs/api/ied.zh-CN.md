@@ -59,7 +59,7 @@ _ = result.Acknowledged
 
 ## 订阅已配置的 URCB
 
-使用分配给当前客户端的报告控制块实例。数据集、触发选项、OptFlds 沿用装置工程配置；报告必须包含数据集名和 ConfRev。当前处理非分段 URCB，尚不处理分段重组和 BRCB 历史重放。
+使用分配给当前客户端的报告控制块实例，沿用工程配置的数据集、触发选项和 OptFlds。报文携带的数据集和版本逐项校验，分段报告重组完成后交付。`SubscribeBRCB` 可按 EntryID 续传缓冲历史。建模上送、续传和定值操作见[工程 API](engineering.zh-CN.md)。
 
 ```go
 block, err := ied.ObjectName("LD", "RP", "LLN0.Events01")
@@ -122,7 +122,7 @@ return runtime.Wait(ctx)
 
 Start 管理 TCP 监听、连接、帧链路和后台协议任务；端口填 0 时用 `Address()` 取得实际地址。父 ctx 取消或 `Stop(ctx)` 会停止传输，模型仍可更新并重新启动。采集使用 `model.Update`，执行使用 `model.OnOperate` 接自己的驱动。当前建模服务端支持普通直接 SPC/DPC 回调；客户端支持四种控制模型，不代表模拟服务端自动支持全部模型。
 
-Memory 模式实际编码、发布并接收 GOOSE 帧。Ethernet 模式指定 `Interface`，使用实际网卡 MAC。`Observe` 是可选的并发事件回调，应快速返回，关闭操作放在回调外。可用 Store 装饰器记录真实 MMS 访问。`simulator.NewMemoryLink` 也可用于 SV 测试；Runtime 本身启动 MMS 和 GOOSE，不负责产生 SV 采样时钟。
+Memory 模式实际编码、发布并接收 GOOSE 帧。Ethernet 模式指定 Interface 并使用实际网卡 MAC。Observe 是并发事件回调，应快速返回，关闭操作放在回调外。Store 装饰器可记录 MMS 访问。MemoryBus 连接独立运行时，Options.SV 可在共享总线上启动软件采样源。参见[完整站点示例](../../examples/scd/station/README.zh-CN.md)。
 
 ## 从 SCL 获得 SV 布局，共用一个网卡读取循环
 

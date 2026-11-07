@@ -65,7 +65,7 @@ func (c *compiler) scalar(a attribute, raw string) (typedValue, error) {
 		var ord int
 		ord, err = c.enum(a.Type, s)
 		v = mms.Integer(int64(ord))
-	case "Dbpos", "Quality", "Check":
+	case "Dbpos", "Quality", "Check", "Tcmd":
 		t.Kind = mms.KindBitString
 		bits := 2
 		t.Length = 2
@@ -90,6 +90,29 @@ func (c *compiler) scalar(a attribute, raw string) (typedValue, error) {
 			tm, err = time.Parse(time.RFC3339Nano, s)
 			v = mms.UTC(tm)
 		}
+	case "ObjRef":
+		t = mms.TypeSpec{Kind: mms.KindVisibleString, Length: -129}
+		v = mms.VisibleString(raw)
+	case "OptFlds", "TrgOps":
+		width := 10
+		if a.Basic == "TrgOps" {
+			width = 6
+		}
+		t = mms.TypeSpec{Kind: mms.KindBitString, Length: -width}
+		v, err = bitValue(width, s)
+	case "EntryTime":
+		t = mms.TypeSpec{Kind: mms.KindBinaryTime, Length: 6}
+		if s == "" {
+			v, err = mms.BinaryTime(make([]byte, 6))
+		} else if tm, e := time.Parse(time.RFC3339Nano, s); e == nil {
+			v = binaryTime(tm)
+		} else {
+			var b []byte
+			b, err = hex.DecodeString(strings.Join(strings.Fields(s), ""))
+			if err == nil {
+				v, err = mms.BinaryTime(b)
+			}
+		}
 	case "VisString32", "VisString64", "VisString65", "VisString129", "VisString255", "Unicode255":
 		if a.Basic == "Unicode255" {
 			t = mms.TypeSpec{Kind: mms.KindMMSString, Length: -255}
@@ -99,8 +122,11 @@ func (c *compiler) scalar(a attribute, raw string) (typedValue, error) {
 			t = mms.TypeSpec{Kind: mms.KindVisibleString, Length: -n}
 			v = mms.VisibleString(raw)
 		}
-	case "Octet6", "Octet8", "Octet64":
-		n, _ := strconv.Atoi(a.Basic[5:])
+	case "Octet6", "Octet8", "Octet64", "EntryID":
+		n := 8
+		if a.Basic != "EntryID" {
+			n, _ = strconv.Atoi(a.Basic[5:])
+		}
 		t = mms.TypeSpec{Kind: mms.KindOctetString, Length: -n}
 		var b []byte
 		b, err = hex.DecodeString(strings.Join(strings.Fields(s), ""))
@@ -136,10 +162,14 @@ func compileEnum(t enumType) (enumValues, error) {
 			return v, fmt.Errorf("EnumType %s: invalid signed 8-bit ordinal %q", t.ID, entry.Ord)
 		}
 		label := strings.TrimSpace(entry.Name)
-		if _, duplicate := v.labels[label]; label == "" || duplicate || v.ordinals[int(n)] {
-			return v, fmt.Errorf("EnumType %s: empty or duplicate entry %q (%d)", t.ID, label, n)
+		if _, duplicate := v.labels[label]; (label != "" && duplicate) || v.ordinals[int(n)] {
+			return v, fmt.Errorf("EnumType %s: duplicate entry %q (%d)", t.ID, label, n)
 		}
-		v.labels[label] = int(n)
+		// IEC's tEnumStringValue permits an empty label. The ordinal still
+		// carries the enumeration; unnamed labels are not lookup aliases.
+		if label != "" {
+			v.labels[label] = int(n)
+		}
 		v.ordinals[int(n)] = true
 	}
 	return v, nil

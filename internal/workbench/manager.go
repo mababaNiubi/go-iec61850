@@ -41,12 +41,14 @@ type imported struct {
 	raw    []byte
 }
 type Manager struct {
+	stationOps  sync.Mutex
 	mu          sync.RWMutex
 	docs        map[string]*imported
 	devices     map[string]*device
 	connections map[string]*connection
 	closed      bool
 	log         journal
+	stations    map[string]*stationRun
 }
 type device struct {
 	id, docID, name, ap string
@@ -57,12 +59,14 @@ type device struct {
 	run                 *simulation
 	controlEnabled      atomic.Bool
 	interlocked         atomic.Bool
+	station             string // d.mu; a station owns the member's transport lifecycle
 }
 type Control struct {
 	Reference string `json:"reference"`
 	Feedback  string `json:"feedback"`
 	Supported bool   `json:"supported"`
 	Reason    string `json:"reason,omitempty"`
+	Model     int    `json:"model"`
 }
 type DeviceSummary struct {
 	ID          string `json:"id"`
@@ -75,6 +79,7 @@ type DeviceSummary struct {
 	GOOSE       string `json:"goose"`
 	Error       string `json:"error,omitempty"`
 	Interlocked bool   `json:"interlocked"`
+	Station     string `json:"station,omitempty"`
 }
 type Point struct {
 	Reference string       `json:"reference"`
@@ -94,10 +99,11 @@ type Detail struct {
 	Streams  []scl.StreamInfo     `json:"streams"`
 	Inputs   []scl.InputReference `json:"inputs"`
 	Controls []Control            `json:"controls"`
+	Reports  []scl.ReportInfo     `json:"reports"`
 }
 
 func New() *Manager {
-	return &Manager{docs: map[string]*imported{}, devices: map[string]*device{}, connections: map[string]*connection{}}
+	return &Manager{docs: map[string]*imported{}, devices: map[string]*device{}, connections: map[string]*connection{}, stations: map[string]*stationRun{}}
 }
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:12]) }
 
@@ -200,6 +206,7 @@ func (d *device) summary() DeviceSummary {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	s := DeviceSummary{ID: d.id, Model: d.docID, IED: d.name, AP: d.ap, Points: len(d.points), Status: "stopped", GOOSE: "off", Interlocked: d.interlocked.Load()}
+	s.Station = d.station
 	if d.run != nil {
 		s.Address = d.run.address
 		s.GOOSE = d.run.mode
@@ -236,6 +243,7 @@ func (m *Manager) Detail(ctx context.Context, id string) (Detail, error) {
 		return Detail{}, err
 	}
 	out := Detail{Device: d.summary(), Points: []Point{}, DataSets: d.ied.DataSets(), Streams: []scl.StreamInfo{}, Controls: append([]Control{}, d.controls...)}
+	out.Reports = d.ied.Reports()
 	for _, g := range d.ied.Streams() {
 		out.Streams = append(out.Streams, g.Info())
 	}
@@ -255,7 +263,10 @@ func (m *Manager) Detail(ctx context.Context, id string) (Detail, error) {
 		}
 		v, e := d.ied.Read(ctx, mms.Access(p.Name))
 		if e != nil {
-			return Detail{}, e
+			// SE remains visible while no client owns an edit reservation.
+			if p.FC != "SE" {
+				return Detail{}, e
+			}
 		}
 		out.Points = append(out.Points, Point{p.Reference, p.FC, p.Name.Domain, p.Name.Item, t.Kind.String(), t, ValueJSON(v), v.String(), p.FC == "ST" || p.FC == "MX"})
 	}
@@ -315,6 +326,8 @@ func updateFeedback(ctx context.Context, ied *scl.IED, n mms.ObjectName, v mms.V
 // Close first prevents new sessions, then cancels protocol work outside the
 // manager lock. A callback can finish its journal write while shutdown waits.
 func (m *Manager) Close() error {
+	m.stationOps.Lock()
+	defer m.stationOps.Unlock()
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -331,6 +344,9 @@ func (m *Manager) Close() error {
 	}
 	m.mu.Unlock()
 	var failures []error
+	for _, station := range m.stations {
+		failures = append(failures, station.runtime.Close())
+	}
 	for _, d := range devices {
 		d.mu.Lock()
 		if d.run != nil {
@@ -339,7 +355,7 @@ func (m *Manager) Close() error {
 		d.mu.Unlock()
 	}
 	for _, c := range conns {
-		c.client.Close()
+		c.services.Close()
 	}
 	return errors.Join(failures...)
 }

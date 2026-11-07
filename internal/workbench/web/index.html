@@ -28,7 +28,13 @@
         <div class="sidebar-heading">
           <span data-i18n="workspace">WORKSPACE</span
           ><button id="sample" class="text-button" data-i18n="sample">
-            Load sample
+            Load sample</button
+          ><button
+            id="station-sample"
+            class="text-button"
+            data-i18n="stationSample"
+          >
+            Station sample
           </button>
         </div>
         <nav id="model-tree" aria-label="Imported device models"></nav>
@@ -50,6 +56,13 @@
             </p>
           </div>
           <div class="head-actions">
+            <button
+              id="station-toggle"
+              class="button secondary hidden"
+              data-i18n="stationStart"
+            >
+              Start station
+            </button>
             <button id="connect-sim" class="button secondary hidden">
               ↗ <span data-i18n="connectSim">Connect client</span></button
             ><button id="simulation-toggle" class="button primary hidden">
@@ -58,6 +71,11 @@
           </div>
         </section>
         <div id="metrics" class="metrics hidden"></div>
+        <section
+          id="station-inputs"
+          class="station-inputs hidden"
+          aria-label="Engineered station inputs"
+        ></section>
         <div class="tabs" role="tablist" aria-label="Workspace views">
           <button class="tab active" data-tab="model" data-i18n="model">
             Data model
@@ -67,6 +85,9 @@
           </button>
           <button class="tab" data-tab="client" data-i18n="client">
             MMS client
+          </button>
+          <button class="tab" data-tab="engineering" data-i18n="engineering">
+            Engineering & reports
           </button>
         </div>
         <section id="model-view" class="view">
@@ -151,6 +172,9 @@
         </section>
         <section id="goose-view" class="view hidden">
           <div id="stream-content" class="stream-content"></div>
+        </section>
+        <section id="engineering-view" class="view hidden">
+          <div id="engineering-content" class="stream-content"></div>
         </section>
         <section id="client-view" class="view hidden">
           <form id="connect-form" class="connect-bar">
@@ -255,7 +279,7 @@
         </div>
         <label class="check-label"
           ><input id="enable-controls" type="checkbox" checked /><span
-            >Enable modeled direct controls in the simulator</span
+            >Enable modeled controls in the simulator</span
           ></label
         >
         <p class="form-note">

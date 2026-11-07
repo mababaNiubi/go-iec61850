@@ -3,6 +3,7 @@ package scl
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/mababaNiubi/go-iec61850/data"
@@ -70,6 +71,7 @@ type compiler struct {
 	budget    int
 	initial   map[string]string
 	enumCache map[string]enumValues
+	metadata  map[string]attribute
 }
 
 func (c *compiler) charge(depth int) error {
@@ -167,21 +169,45 @@ func (c *compiler) node(domain string, ln logicalNode) error {
 }
 
 func (c *compiler) instance(parent string, n instance) error {
-	if !identifier(n.Name) || n.Index != "" {
+	if !identifier(n.Name) {
 		return fmt.Errorf("invalid or indexed instance %q", n.Name)
 	}
 	path := n.Name
 	if parent != "" {
 		path = parent + "." + path
 	}
+	if n.Index != "" {
+		index, err := strconv.ParseUint(n.Index, 10, 16)
+		if err != nil {
+			return fmt.Errorf("invalid instance index %q", n.Index)
+		}
+		path += "." + strconv.FormatUint(index, 10)
+	}
+	if n.ValueKind == "RO" || n.ValueKind == "Conf" {
+		c.device.readOnlyPaths = append(c.device.readOnlyPaths, c.owner.Domain+"/"+c.owner.Item+"."+path)
+	}
 	if len(n.Values) > 0 {
-		if len(n.Values) != 1 || n.Values[0].Group != "" {
-			return fmt.Errorf("%s: setting-group values are unsupported", path)
+		values := n.Values
+		groups := map[string]bool{}
+		for _, v := range values {
+			if v.Group != "" {
+				if groups[v.Group] {
+					return fmt.Errorf("duplicate setting group value at %s", path)
+				}
+				groups[v.Group] = true
+				c.device.groupInitial = append(c.device.groupInitial, groupInitial{domain: c.owner.Domain, ln: c.owner.Item, path: path, group: v.Group, text: v.Text})
+			}
+		}
+		values = ungrouped(values)
+		if len(values) > 1 {
+			return fmt.Errorf("%s: duplicate initial value", path)
 		}
 		if _, ok := c.initial[path]; ok {
 			return fmt.Errorf("duplicate instance value %s", path)
 		}
-		c.initial[path] = n.Values[0].Text
+		if len(values) == 1 {
+			c.initial[path] = values[0].Text
+		}
 	}
 	for _, child := range n.SDI {
 		if err := c.instance(path, child); err != nil {
@@ -204,8 +230,11 @@ func (c *compiler) object(root *branch, ref declaration, path string, depth int)
 	if !ok {
 		return fmt.Errorf("unknown DOType %q", ref.Type)
 	}
-	if !identifier(ref.Name) || ref.Count != "" && ref.Count != "0" {
-		return fmt.Errorf("invalid or array DO/SDO %q", ref.Name)
+	if !identifier(ref.Name) {
+		return fmt.Errorf("invalid DO/SDO %q", ref.Name)
+	}
+	if ref.Count != "" && ref.Count != "0" {
+		return c.arrayObject(root, ref, path, depth)
 	}
 	if len(t.Sub)+len(t.Attrs) == 0 {
 		return fmt.Errorf("empty DOType %q", t.ID)
@@ -239,25 +268,95 @@ func (c *compiler) object(root *branch, ref declaration, path string, depth int)
 		if err = root.insert(append([]string{a.FC}, strings.Split(childPath, ".")...), v); err != nil {
 			return err
 		}
+		if a.FC == "SG" {
+			if err = root.insert(append([]string{"SE"}, strings.Split(childPath, ".")...), v); err != nil {
+				return err
+			}
+		}
+		name := mms.DomainName(c.owner.Domain, c.owner.Item+"$"+a.FC+"$"+strings.ReplaceAll(childPath, ".", "$"))
+		var reason byte
+		if a.Dchg {
+			reason |= 0x40
+		}
+		if a.Qchg {
+			reason |= 0x20
+		}
+		if a.Dupd {
+			reason |= 0x10
+		}
+		c.device.triggers[name] = reason
 	}
 	return nil
 }
 func supportedFC(fc string) bool {
 	switch fc {
-	case "ST", "MX", "SP", "SV", "CF", "DC", "CO", "EX", "BL", "OR":
+	case "ST", "MX", "SP", "SV", "CF", "DC", "CO", "EX", "BL", "OR", "SG", "SE", "SR":
 		return true
 	}
 	return false
 }
 func (c *compiler) attribute(a attribute, path string, depth int) (typedValue, error) {
+	if a.ValueKind == "RO" || a.ValueKind == "Conf" {
+		c.device.readOnlyPaths = append(c.device.readOnlyPaths, c.owner.Domain+"/"+c.owner.Item+"."+path)
+	}
+	if c.metadata != nil {
+		c.metadata[path] = a
+	}
 	if err := c.charge(depth); err != nil {
 		return typedValue{}, err
 	}
-	if !identifier(a.Name) || a.Count != "" && a.Count != "0" {
-		return typedValue{}, fmt.Errorf("invalid or array DA/BDA %q", a.Name)
+	if !identifier(a.Name) {
+		return typedValue{}, fmt.Errorf("invalid DA/BDA %q", a.Name)
 	}
-	if len(a.Values) > 1 || len(a.Values) == 1 && a.Values[0].Group != "" {
-		return typedValue{}, fmt.Errorf("setting-group values are unsupported")
+	if a.Count != "" && a.Count != "0" {
+		count, err := arrayCount(a.Count)
+		if err != nil {
+			return typedValue{}, err
+		}
+		a.Count = ""
+		var values []mms.Value
+		var element mms.TypeSpec
+		for i := 0; i < count; i++ {
+			v, err := c.attribute(a, path+"."+strconv.Itoa(i), depth+1)
+			if err != nil {
+				return typedValue{}, err
+			}
+			element = v.spec
+			values = append(values, v.value)
+		}
+		return typedValue{mms.TypeSpec{Kind: mms.KindArray, Length: count, Element: &element}, mms.Array(values...)}, nil
+	}
+	for i := range c.device.groupInitial {
+		v := &c.device.groupInitial[i]
+		if v.domain == c.owner.Domain && v.ln == c.owner.Item && v.path == path {
+			v.basic = a.Basic
+			v.typ = a.Type
+		}
+	}
+	groups := map[string]bool{}
+	for _, v := range a.Values {
+		if v.Group != "" {
+			if groups[v.Group] {
+				return typedValue{}, fmt.Errorf("duplicate setting group declaration at %s", path)
+			}
+			groups[v.Group] = true
+			// Instance values take precedence over the template default.
+			overridden := false
+			for _, initial := range c.device.groupInitial {
+				if initial.domain == c.owner.Domain && initial.ln == c.owner.Item && initial.path == path && initial.group == v.Group {
+					overridden = true
+					break
+				}
+			}
+			if overridden {
+				continue
+			}
+			c.device.groupInitial = append(c.device.groupInitial, groupInitial{domain: c.owner.Domain, ln: c.owner.Item, path: path, group: v.Group, text: v.Text, basic: a.Basic, typ: a.Type})
+		}
+	}
+	a.Values = ungrouped(a.Values)
+	if len(a.Values) > 1 {
+		return typedValue{}, fmt.Errorf("duplicate attribute initial value")
 	}
 	raw := ""
 	if len(a.Values) == 1 {
@@ -267,6 +366,33 @@ func (c *compiler) attribute(a attribute, path string, depth int) (typedValue, e
 	if ok {
 		raw = override
 		delete(c.initial, path)
+	}
+	if a.Basic == "PhyComAddr" {
+		if ok || len(a.Values) > 0 {
+			return typedValue{}, fmt.Errorf("PhyComAddr needs values on its components")
+		}
+		spec := mms.TypeSpec{Kind: mms.KindStructure}
+		var values []mms.Value
+		for _, field := range []attribute{{declaration: declaration{Name: "Addr"}, Basic: "Octet6"}, {declaration: declaration{Name: "PRIORITY"}, Basic: "INT8U"}, {declaration: declaration{Name: "VID"}, Basic: "INT16U"}, {declaration: declaration{Name: "APPID"}, Basic: "INT16U"}} {
+			value, err := c.attribute(field, path+"."+field.Name, depth+1)
+			if err != nil {
+				return typedValue{}, err
+			}
+			if field.Name == "Addr" {
+				bytes, _ := value.value.Bytes()
+				if len(bytes) == 0 {
+					bytes = make([]byte, 6)
+				}
+				value.spec.Length = 6
+				value.value = mms.OctetString(bytes)
+				if err := mms.ValidateValue(value.spec, value.value); err != nil {
+					return typedValue{}, err
+				}
+			}
+			spec.Components = append(spec.Components, mms.Component{Name: field.Name, Type: value.spec})
+			values = append(values, value.value)
+		}
+		return typedValue{spec, mms.Structure(values...)}, nil
 	}
 	if a.Basic != "Struct" {
 		return c.scalar(a, raw)

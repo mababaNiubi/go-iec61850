@@ -13,6 +13,14 @@ type InputReference struct {
 // client-only LNs directly under an AccessPoint. Use IED.Input to resolve one
 // of these references against the publishing server's dataset.
 func (s *System) GOOSEInputs(ied, ap string) ([]InputReference, error) {
+	return s.inputs(ied, ap, "GOOSE")
+}
+
+// SVInputs enumerates engineered sampled-value subscriber bindings.
+func (s *System) SVInputs(ied, ap string) ([]InputReference, error) {
+	return s.inputs(ied, ap, "SMV")
+}
+func (s *System) inputs(ied, ap, service string) ([]InputReference, error) {
 	p, err := s.find(ied, ap)
 	if err != nil {
 		return nil, err
@@ -21,7 +29,7 @@ func (s *System) GOOSEInputs(ied, ap string) ([]InputReference, error) {
 	collect := func(nodes []logicalNode) {
 		for _, ln := range nodes {
 			for _, x := range ln.Inputs {
-				if x.Service != "GOOSE" {
+				if x.Service != service {
 					continue
 				}
 				path := x.DO

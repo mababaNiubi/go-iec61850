@@ -47,14 +47,35 @@ func (c Command) MMSValue() (mms.Value, error) {
 }
 
 type control struct {
-	perform func(context.Context, Command) error
-	busy    chan struct{}
+	perform   func(context.Context, Command) error
+	busy      chan struct{}
+	model     int64
+	owner     *mms.Association
+	deadline  time.Time
+	selection mms.Value
 }
 
 // OnOperate binds one whole Oper object to a hardware or simulation handler.
 // Only a direct-with-normal-security binary control may be bound. Concurrent
 // commands to the same object receive TemporarilyUnavailable while it is busy.
 func (d *IED) OnOperate(name mms.ObjectName, perform func(context.Context, Command) error) error {
+	model := settingName(name, "CF")
+	model.Item = strings.TrimSuffix(model.Item, "$Oper") + "$ctlModel"
+	v, err := d.model.Read(context.Background(), mms.Access(model))
+	mode, _ := v.Int()
+	if err != nil || mode != 1 {
+		return fmt.Errorf("scl: OnOperate requires ctlModel=1; use OnControl for modeled selection/termination")
+	}
+	return d.OnControl(name, perform)
+}
+
+// OnControl binds an immediate SPC/DPC actuator for ctlModel 1..4. SBO modes
+// require their SCL-declared SBO/SBOw objects. The server owns selection,
+// expiry and enhanced termination. The callback owns hardware execution.
+// For enhanced models it runs only after the successful Oper Write response.
+// A callback failure then produces negative CommandTermination, not a rejected
+// acceptance. Its context lives until the association closes.
+func (d *IED) OnControl(name mms.ObjectName, perform func(context.Context, Command) error) error {
 	if perform == nil || !d.binary[name] {
 		return fmt.Errorf("scl: %s is not a modeled binary Oper, or handler is nil", name)
 	}
@@ -70,15 +91,22 @@ func (d *IED) OnOperate(name mms.ObjectName, perform func(context.Context, Comma
 		return fmt.Errorf("scl: %s ctlModel: %w", name, err)
 	}
 	mode, err := model.Int()
-	if err != nil || mode != 1 {
-		return fmt.Errorf("scl: %s requires direct-with-normal-security (ctlModel=1)", name)
+	if err != nil || mode < 1 || mode > 4 {
+		return fmt.Errorf("scl: %s requires ctlModel 1..4", name)
+	}
+	base := strings.TrimSuffix(name.Item, "$Oper")
+	if mode == 2 && d.types[mms.DomainName(name.Domain, base+"$SBO")].Kind != mms.KindVisibleString {
+		return fmt.Errorf("scl: missing SBO declaration")
+	}
+	if mode == 4 && !operLayout(d.types[mms.DomainName(name.Domain, base+"$SBOw")]) {
+		return fmt.Errorf("scl: missing compatible SBOw declaration")
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.handlers[name] != nil {
 		return fmt.Errorf("scl: duplicate control handler for %s", name)
 	}
-	d.handlers[name] = &control{perform: perform, busy: make(chan struct{}, 1)}
+	d.handlers[name] = &control{perform: perform, busy: make(chan struct{}, 1), model: mode}
 	return nil
 }
 
@@ -104,33 +132,17 @@ func (d *IED) Write(ctx context.Context, a mms.VariableAccess, value mms.Value) 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	spec, known := d.types[a.Name]
+	if handled, err := d.writeService(ctx, a, value); handled {
+		return err
+	}
+	if handled, err := d.writeControl(ctx, a, value); handled {
+		return err
+	}
+	_, known := d.types[a.Name]
 	if !known {
 		return mms.ObjectNonExistent
 	}
-	d.mu.RLock()
-	h := d.handlers[a.Name]
-	d.mu.RUnlock()
-	if h == nil || a.Selection.Index != nil || a.Selection.Component != "" {
-		return mms.ObjectAccessDenied
-	}
-	if err := mms.ValidateValue(spec, value); err != nil {
-		return mms.TypeInconsistent
-	}
-	cmd, err := decodeCommand(value)
-	if err != nil {
-		return err
-	}
-	select {
-	case h.busy <- struct{}{}:
-		defer func() { <-h.busy }()
-	default:
-		return mms.TemporarilyUnavailable
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return h.perform(ctx, cmd)
+	return mms.ObjectAccessDenied
 }
 
 // The caller has checked the entire value against an accepted Oper layout.

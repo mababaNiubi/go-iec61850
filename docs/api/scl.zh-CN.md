@@ -121,7 +121,7 @@ func closeBreaker(ctx context.Context, client *mms.Client, oper mms.ObjectName, 
 | `ied.Input(receiver, ap, intAddr)` | 将明确配置的接收端 ExtRef 绑定到发布数据项 |
 | `ied.NewServer(cfg)` / `ied.OnOperate(name, handler)` / `ied.Update(ctx, changes...)` | 提供 MMS 服务、注册二进制控制、提交采集反馈 |
 
-当前支持所选接入点的逻辑设备、带前缀的 LN、非数组 DO/SDO/DA/BDA 模板、嵌套结构、枚举和实例初值。支持明确指定目标的 FCDA（整 DO 或属性）、普通二层 GOOSE 静态配置、六字段 Oper 的 SPC/DPC 普通安全直接控制。数组、定值组、SBO/增强控制、RCB 报告、在线 GoCB 重配置超出该实现范围。一次接线拓扑属于描述信息。解析输入限制为 16 MiB，会检查实际参与映射的引用。枚举按有符号 8 位值处理，未给初值的枚举从 0 开始。完整模式校验应使用与 SCD 版次匹配的 XSD。
+当前支持所选接入点的逻辑设备、带前缀 LN、DO/SDO/DA/BDA 标量及数组模板、嵌套结构、枚举、实例初值、明确目标的 FCDA 和普通二层 GOOSE 静态配置。`OnOperate` 保留直接普通二进制控制，`OnControl` 增加六字段 SPC/DPC 的选择与增强终结。ReportControl 生成 URCB/BRCB，SettingControl 生成 SG/SE 及定值编辑视图。`System.Catalog` 提供一次设备关联和逐 DO 诊断。数组支持 1..4096 个元素，受总展开预算限制；支持带 ix 的实例初值及嵌套 FCDA 交替访问。在线 GoCB 重配置仍在当前范围之外。输入最大 16 MiB，模式校验使用对应版次的 XSD。参见[工程场景 API](engineering.zh-CN.md)。
 
 示例文件已通过 IEC 61850-6 SCL 2007B4 XSD 校验。SCL 对应 [IEC 61850-6 第 2.1 版](https://webstore.iec.ch/en/publication/63319)，MMS/GOOSE 映射对应 [IEC 61850-8-1](https://webstore.iec.ch/en/publication/66585)。可对照 libiec61850 的[客户端控制接口](https://support.mz-automation.de/doc/libiec61850/c/latest/group__IEC61850__CLIENT__CONTROL.html)。
 

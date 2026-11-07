@@ -11,4 +11,8 @@ import (
 //go:embed bay.scd
 var model []byte
 
-func SCL() []byte { return bytes.Clone(model) }
+//go:embed station.scd
+var station []byte
+
+func SCL() []byte        { return bytes.Clone(model) }
+func StationSCL() []byte { return bytes.Clone(station) }

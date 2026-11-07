@@ -15,6 +15,11 @@ const dictionaries = {
     import: "Import SCL",
     workspace: "WORKSPACE",
     sample: "Load sample",
+    stationSample: "Station sample",
+    stationStart: "Start station",
+    stationStop: "Stop station",
+    stationHint:
+      "Shared software bus · SV publishes current MU model values · unsynchronized",
     local: "Models and sessions stay in this process.",
     start: "Start simulator",
     stop: "Stop simulator",
@@ -43,11 +48,23 @@ const dictionaries = {
     interlock: "Block controls",
     selected: "Select an attribute to inspect its value and wire address.",
     connected: "Workspace online",
+    engineering: "Engineering & reports",
+    equipment: "Primary equipment",
+    catalog: "Export point catalog",
+    checkModel: "Check against connected IED",
+    subscribe: "Subscribe + GI",
+    stopReport: "Stop subscription",
+    reportHint:
+      "Report values and EntryID appear in the event journal. A BRCB resume cursor uses hexadecimal bytes.",
   },
   zh: {
     import: "导入 SCL",
     workspace: "工作空间",
     sample: "载入示例",
+    stationSample: "整站示例",
+    stationStart: "启动整站",
+    stationStop: "停止整站",
+    stationHint: "共享软件总线 · SV 发布当前 MU 模型值 · 未同步",
     local: "模型和会话保存在当前进程内。",
     start: "启动模拟设备",
     stop: "停止模拟设备",
@@ -76,6 +93,14 @@ const dictionaries = {
     interlock: "闭锁控制",
     selected: "选择一个属性，查看类型、当前值和 MMS 地址。",
     connected: "工作空间已连接",
+    engineering: "工程选点与报告",
+    equipment: "一次设备",
+    catalog: "导出模型点表",
+    checkModel: "与已连接 IED 核对",
+    subscribe: "订阅并总召",
+    stopReport: "停止订阅",
+    reportHint:
+      "报告值和 EntryID 显示在事件日志中。BRCB 续传标识填写十六进制字节。",
   },
 };
 let language = localStorage.getItem("iedlab-language") || "en";
@@ -84,6 +109,7 @@ const state = {
   documents: [],
   devices: [],
   connections: [],
+  stations: [],
   events: [],
   detail: null,
   deviceId: "",
@@ -100,8 +126,12 @@ const state = {
   eventFloor: 0,
   remoteNames: [],
   receiver: null,
+  catalog: null,
+  catalogRef: null,
+  equipment: "",
 };
 let detailTicket = 0;
+let stationTicket = 0;
 let refreshTimer;
 let toastTimer;
 let lastRows = "";
@@ -151,6 +181,7 @@ function applyLanguage() {
       ? "查找逻辑节点、属性或 MMS 名称…"
       : "Find a logical node, attribute or MMS name…";
   renderSummary();
+  renderStation();
   renderInspector(true);
 }
 async function refreshState() {
@@ -159,10 +190,58 @@ async function refreshState() {
   state.devices = result.devices;
   state.connections = result.connections;
   state.events = result.events || [];
+  state.stations = result.stations || [];
+  stationTicket++;
   renderTree();
   renderEvents();
+  renderStation();
   if (state.clientId && !state.connections.some((c) => c.id === state.clientId))
     state.clientId = "";
+}
+function renderStation() {
+  const model = state.detail?.device?.model;
+  const station = state.stations.find((s) => s.model === model);
+  const button = $("#station-toggle");
+  button.classList.toggle("hidden", !model);
+  button.textContent = tr(station ? "stationStop" : "stationStart");
+  $("#simulation-toggle").disabled = !!state.detail?.device?.station;
+  const target = $("#station-inputs");
+  target.classList.toggle("hidden", !station);
+  if (!station) {
+    target.innerHTML = "";
+    return;
+  }
+  target.innerHTML =
+    "<p>" +
+    esc(tr("stationHint")) +
+    " · " +
+    esc(station.status) +
+    (station.error ? " · " + esc(station.error) : "") +
+    '</p><div class="station-grid">' +
+    station.inputs
+      .map(
+        (input) =>
+          '<div class="station-reading"><strong>' +
+          esc(input.receiver + "/" + input.input) +
+          "</strong><span>" +
+          esc(input.service) +
+          " · " +
+          esc(input.value) +
+          "</span><small>" +
+          esc(input.error || input.source) +
+          " · #" +
+          input.counter +
+          "</small></div>",
+      )
+      .join("") +
+    "</div>";
+}
+async function refreshStation() {
+  const ticket = ++stationTicket;
+  const stations = await api("/stations");
+  if (ticket !== stationTicket) return;
+  state.stations = stations;
+  renderStation();
 }
 function renderTree() {
   const tree = $("#model-tree");
@@ -264,10 +343,32 @@ function renderTree() {
   });
 }
 async function selectDevice(doc, ap) {
-  const selected = await api("/devices", {
-    method: "POST",
-    body: { Model: doc.id, IED: ap.ied, AP: ap.ap },
-  });
+  state.catalogRef = { Model: doc.id, IED: ap.ied, AP: ap.ap };
+  state.catalog = await api(
+    "/models/" +
+      doc.id +
+      "/catalog?ied=" +
+      encodeURIComponent(ap.ied) +
+      "&ap=" +
+      encodeURIComponent(ap.ap),
+  );
+  state.equipment = "";
+  renderEngineering();
+  let selected;
+  try {
+    selected = await api("/devices", {
+      method: "POST",
+      body: { Model: doc.id, IED: ap.ied, AP: ap.ap },
+    });
+  } catch (error) {
+    state.deviceId = "";
+    state.detail = null;
+    for (const id of ["metrics", "simulation-toggle", "connect-sim"])
+      $("#" + id).classList.add("hidden");
+    showTab("engineering");
+    notify(error.message, true);
+    return;
+  }
   state.deviceId = selected.id;
   state.selected = "";
   state.editorDirty = false;
@@ -375,6 +476,12 @@ function renderRows() {
   const query = state.search.toLowerCase();
   const rows = state.detail.points.filter(
     (p) =>
+      (!state.equipment ||
+        (state.catalog?.Points || []).some(
+          (m) =>
+            m.Reference === p.reference &&
+            (m.Equipment || []).includes(state.equipment),
+        )) &&
       (!state.fc || p.fc === state.fc) &&
       (state.structures || (p.kind !== "structure" && p.kind !== "array")) &&
       (p.reference + " " + p.item).toLowerCase().includes(query),
@@ -511,7 +618,17 @@ function renderInspector(force = false) {
     (control
       ? '<div class="inspector-section"><div class="field-caption">' +
         esc(tr("controls")) +
-        '</div><code style="font-size:10px;color:#8191a2">Direct / normal security</code><div class="controls"><button id="control-open" class="button secondary" ' +
+        '</div><code style="font-size:10px;color:#8191a2">' +
+        esc(
+          [
+            "Status only",
+            "Direct / normal security",
+            "SBO / normal security",
+            "Direct / enhanced security",
+            "SBO / enhanced security",
+          ][control.model] || "Unknown control model",
+        ) +
+        '</code><div class="controls"><button id="control-open" class="button secondary" ' +
         (!control.supported || d.status !== "running" ? "disabled" : "") +
         '>○ OPEN</button><button id="control-close" class="button primary" ' +
         (!control.supported || d.status !== "running" ? "disabled" : "") +
@@ -659,10 +776,215 @@ function showTab(tab) {
   document
     .querySelectorAll("[data-tab]")
     .forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  for (const name of ["model", "goose", "client"])
+  for (const name of ["model", "goose", "client", "engineering"])
     $("#" + name + "-view").classList.toggle("hidden", name !== tab);
   if (tab === "goose") renderStreams();
   if (tab === "client") renderConnections();
+  if (tab === "engineering") renderEngineering();
+}
+
+// Engineering metadata comes from the same Go SCL compiler used by the SDK.
+// The browser only renders it and submits explicit online operations.
+function renderEngineering() {
+  const box = $("#engineering-content");
+  if (!state.catalog) {
+    box.textContent =
+      language === "zh"
+        ? "导入并选择工程中的 IED。"
+        : "Import and select an engineered IED.";
+    return;
+  }
+  const c = state.catalog;
+  box.innerHTML =
+    '<div class="stream-grid"><article class="stream-card"><h3>' +
+    tr("equipment") +
+    '</h3><button id="equipment-all" class="button secondary">' +
+    (language === "zh" ? "查看全部测点" : "Show all points") +
+    "</button>" +
+    (c.Equipment || [])
+      .map(
+        (e, i) =>
+          '<button class="button secondary equipment-pick" data-index="' +
+          i +
+          '">' +
+          esc(e.Path) +
+          "</button><p>" +
+          esc(
+            (e.Nodes || [])
+              .map(
+                (n) =>
+                  n.IED + "/" + n.LD + "/" + n.Prefix + n.Class + n.Instance,
+              )
+              .join(", "),
+          ) +
+          "</p>",
+      )
+      .join("") +
+    '</article><article class="stream-card"><h3>SCL ' +
+    esc([c.Version, c.Revision, c.Release].filter(Boolean).join(" ")) +
+    '</h3><button id="catalog-export" class="button secondary">' +
+    tr("catalog") +
+    '</button> <button id="catalog-check" class="button secondary">' +
+    tr("checkModel") +
+    '</button><pre id="catalog-result"></pre>' +
+    (c.Diagnostics || [])
+      .map(
+        (d) =>
+          '<p class="form-error">' +
+          esc(d.Reference) +
+          " · " +
+          esc(d.Message) +
+          "</p>",
+      )
+      .join("") +
+    "</article></div>" +
+    '<div class="stream-grid">' +
+    (state.detail?.reports || [])
+      .map(
+        (r, i) =>
+          '<article class="stream-card"><h3>' +
+          (r.Buffered ? "BRCB " : "URCB ") +
+          esc(mmsName(r.Name)) +
+          "</h3><p>" +
+          esc(mmsName(r.DataSet)) +
+          " · ConfRev " +
+          r.ConfRev +
+          "</p>" +
+          (r.Buffered
+            ? '<label>Resume EntryID<input class="report-cursor" data-index="' +
+              i +
+              '" placeholder="hex (optional)" maxlength="256"></label>'
+            : "") +
+          '<button class="button primary report-start" data-index="' +
+          i +
+          '">' +
+          tr("subscribe") +
+          '</button> <button class="button secondary report-stop" data-index="' +
+          i +
+          '">' +
+          tr("stopReport") +
+          "</button></article>",
+      )
+      .join("") +
+    '</div><p class="form-note">' +
+    tr("reportHint") +
+    "</p>" +
+    '<div class="table-scroll"><table><thead><tr><th>Reference</th><th>FC / CDC</th><th>Type</th><th>Quality / time</th></tr></thead><tbody>' +
+    (c.Points || [])
+      .map(
+        (p) =>
+          "<tr><td>" +
+          esc(p.Reference) +
+          "</td><td>" +
+          esc(p.FC + " / " + p.CDC) +
+          "</td><td>" +
+          esc(p.BasicType || p.Type.Kind) +
+          "</td><td>" +
+          esc(
+            [p.Quality?.Item, p.Timestamp?.Item].filter(Boolean).join(" / "),
+          ) +
+          "</td></tr>",
+      )
+      .join("") +
+    "</tbody></table></div>";
+  box.querySelectorAll(".equipment-pick").forEach(
+    (b) =>
+      (b.onclick = () => {
+        state.equipment = c.Equipment[Number(b.dataset.index)].Path;
+        state.search = "";
+        $("#search").value = "";
+        showTab("model");
+        renderRows();
+        notify(state.equipment);
+      }),
+  );
+  $("#equipment-all").onclick = () => {
+    state.equipment = "";
+    showTab("model");
+    renderRows();
+  };
+  $("#catalog-export").onclick = () => {
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(c, null, 2)], { type: "application/json" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "iec61850-points.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  $("#catalog-check").onclick = guard(async () => {
+    if (!state.clientId)
+      throw new Error(
+        language === "zh"
+          ? "先连接 MMS 客户端。"
+          : "Connect an MMS client first.",
+      );
+    const issues = await api("/connections/" + state.clientId + "/check", {
+      method: "POST",
+      body: state.catalogRef,
+    });
+    $("#catalog-result").textContent = issues?.length
+      ? issues.map((d) => d.Reference + " · " + d.Message).join("\n")
+      : language === "zh"
+        ? "在线类型和数据集顺序一致。"
+        : "Online types and dataset order match.";
+  });
+  for (const action of ["start", "stop"])
+    box.querySelectorAll(".report-" + action).forEach(
+      (b) =>
+        (b.onclick = guard(async () => {
+          const r = state.detail.reports[Number(b.dataset.index)];
+          if (!state.clientId) {
+            const address = state.detail.device.address;
+            if (!address) throw new Error("Connect an MMS client first.");
+            await connect(address);
+            showTab("engineering");
+          }
+          const endpoint = "/connections/" + state.clientId + "/reports";
+          if (action === "stop")
+            await api(
+              endpoint +
+                "?domain=" +
+                encodeURIComponent(r.Name.Domain) +
+                "&item=" +
+                encodeURIComponent(r.Name.Item),
+              { method: "DELETE" },
+            );
+          else {
+            const hex =
+              box
+                .querySelector(
+                  '.report-cursor[data-index="' + b.dataset.index + '"]',
+                )
+                ?.value.trim() || "";
+            if (hex && (!/^[0-9a-f]+$/i.test(hex) || hex.length % 2))
+              throw new Error(
+                "EntryID must contain complete hexadecimal bytes.",
+              );
+            const options = { GI: !hex };
+            if (hex)
+              options.ResumeEntryID = btoa(
+                String.fromCharCode(
+                  ...hex.match(/../g).map((v) => parseInt(v, 16)),
+                ),
+              );
+            await api(endpoint, {
+              method: "POST",
+              body: {
+                Domain: r.Name.Domain,
+                Item: r.Name.Item,
+                Options: options,
+              },
+            });
+          }
+          notify(
+            action === "start"
+              ? "Report subscription enabled"
+              : "Report subscription stopped",
+          );
+        })),
+    );
 }
 function renderEvents() {
   const filter = $("#event-filter").value;
@@ -856,6 +1178,25 @@ $("#file-input").onchange = guard(async (event) => {
   event.target.value = "";
 });
 $("#sample").onclick = $("#sample-empty").onclick = guard(loadSample);
+$("#station-sample").onclick = guard(async () => {
+  const doc = await api("/models/station-sample", { method: "POST" });
+  await refreshState();
+  await selectDevice(
+    doc,
+    doc.accessPoints.find((ap) => ap.ied === "BayIED") ||
+      doc.accessPoints.find((ap) => ap.server),
+  );
+});
+$("#station-toggle").onclick = guard(async () => {
+  const model = state.detail?.device?.model;
+  if (!model) return;
+  const running = state.stations.some((s) => s.model === model);
+  await api("/models/" + model + "/station", {
+    method: running ? "DELETE" : "POST",
+  });
+  await refreshDetail();
+  await refreshState();
+});
 $("#search").oninput = (event) => {
   state.search = event.target.value;
   renderRows();
@@ -987,4 +1328,6 @@ events.onerror = () => {
 };
 setInterval(() => {
   if (state.deviceId && !document.hidden) refreshDetail().catch(() => {});
+  if (state.stations.length && !document.hidden)
+    refreshStation().catch(() => {});
 }, 2000);

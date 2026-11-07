@@ -4,7 +4,6 @@ package mms
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/mababaNiubi/go-iec61850/internal/ber"
 )
@@ -17,40 +16,13 @@ type NamedList struct {
 type DeleteResult struct{ Matched, Deleted uint32 }
 
 func selectedType(t TypeSpec, selection Selection) (TypeSpec, error) {
-	if selection.Component != "" {
-		for _, part := range strings.Split(selection.Component, "$") {
-			found := false
-			for _, component := range t.Components {
-				if component.Name == part {
-					t = component.Type
-					found = true
-					break
-				}
-			}
-			if !found {
-				return TypeSpec{}, ObjectNonExistent
-			}
-		}
-	}
-	if selection.Index != nil {
-		if t.Kind != KindArray || t.Element == nil {
-			return TypeSpec{}, ObjectAccessUnsupported
-		}
-		if uint64(*selection.Index) >= uint64(t.Length) {
-			return TypeSpec{}, InvalidAddress
-		}
-		t = *t.Element
-	}
-	return t, nil
+	return SelectedType(t, selection)
 }
 
 func cloneAccesses(in []VariableAccess) []VariableAccess {
 	out := append([]VariableAccess(nil), in...)
 	for i := range out {
-		if out[i].Selection.Index != nil {
-			v := *out[i].Selection.Index
-			out[i].Selection.Index = &v
-		}
+		out[i].Selection = out[i].Selection.Clone()
 	}
 	return out
 }
@@ -433,35 +405,10 @@ func decodeReport(e ber.Element) (InformationReport, error) {
 	return r, err
 }
 func (a *Association) SendReport(ctx context.Context, r InformationReport) error {
-	var spec []byte
-	if r.List != nil {
-		if len(r.Variables) != 0 {
-			return fmt.Errorf("mms: ambiguous report specification")
-		}
-		if err := r.List.validate(); err != nil {
-			return err
-		}
-		spec = ber.Encode(0xa1, encodeName(*r.List))
-	} else {
-		if len(r.Variables) != len(r.Results) {
-			return fmt.Errorf("mms: report results count mismatch")
-		}
-		var err error
-		spec, err = encodeAccesses(r.Variables)
-		if err != nil {
-			return err
-		}
-	}
-	for _, x := range r.Results {
-		if x.Error == nil && depth(x.Value) > a.params.NestingLevel {
-			return fmt.Errorf("mms: report exceeds negotiated nesting")
-		}
-	}
-	values, err := encodeResults(r.Results)
+	data, err := a.encodeReport(r)
 	if err != nil {
 		return err
 	}
-	data := ber.Encode(0xa3, ber.Encode(0xa0, spec, ber.Encode(0xa0, values)))
 	if len(data) > a.params.MaxPDUSize {
 		return fmt.Errorf("mms: report exceeds negotiated PDU size")
 	}
@@ -473,4 +420,43 @@ func (a *Association) SendReport(ctx context.Context, r InformationReport) error
 		return ErrClosed
 	}
 	return sendPDU(ctx, a.conn, a.sendToken, data)
+}
+
+// ReportSize measures the complete unconfirmed PDU before a service fragments
+// a dataset report. It enforces the association's negotiated nesting depth.
+func (a *Association) ReportSize(r InformationReport) (int, error) {
+	data, err := a.encodeReport(r)
+	return len(data), err
+}
+func (a *Association) encodeReport(r InformationReport) ([]byte, error) {
+	var spec []byte
+	if r.List != nil {
+		if len(r.Variables) != 0 {
+			return nil, fmt.Errorf("mms: ambiguous report specification")
+		}
+		if err := r.List.validate(); err != nil {
+			return nil, err
+		}
+		spec = ber.Encode(0xa1, encodeName(*r.List))
+	} else {
+		if len(r.Variables) != len(r.Results) {
+			return nil, fmt.Errorf("mms: report results count mismatch")
+		}
+		var err error
+		spec, err = encodeAccesses(r.Variables)
+		if err != nil {
+			return nil, err
+		}
+	}
+	for _, x := range r.Results {
+		if x.Error == nil && depth(x.Value) > a.params.NestingLevel {
+			return nil, fmt.Errorf("mms: report exceeds negotiated nesting")
+		}
+	}
+	values, err := encodeResults(r.Results)
+	if err != nil {
+		return nil, err
+	}
+	data := ber.Encode(0xa3, ber.Encode(0xa0, spec, ber.Encode(0xa0, values)))
+	return data, nil
 }

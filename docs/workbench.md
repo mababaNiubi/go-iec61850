@@ -24,6 +24,13 @@ The left tree filters logical nodes. Search also matches the full object referen
 
 ## Import an engineering file
 
+Open **Engineering & reports** after selecting an IED. Choose a primary equipment
+path to filter its modeled points, export the point catalog, or check online types
+and dataset order against the current MMS connection. RCB cards subscribe to
+actual URCB/BRCB instances and request GI. Report entries, inclusion reasons and
+EntryID appear in the event journal. BRCB cards accept a hexadecimal resume cursor.
+The catalog remains inspectable when a DO is outside the simulation profile.
+
 Use **Import SCL**, drop a file on the page, or preload it at startup.
 
 ```sh
@@ -112,3 +119,5 @@ go run ./cmd/iedlab protocol goose-subscriber -input-frame _local/frames/goose.b
 The build scripts also produce the single `iedlab` executable. The former six protocol commands are grouped under `iedlab protocol`, retaining their diagnostic flags. `scdinspect` becomes `iedlab inspect`. Individual library examples continue to demonstrate focused API calls.
 
 The transport lifecycle is implemented in the public [simulator package](../simulator/runtime.go); client-side control uses the public [ied package](api/ied.md). Other programs can import them without importing `internal/workbench`.
+
+Use **Station sample → Start station** to start a shared multi-IED GOOSE/SV bus. The live input panel shows ExtRef values. MU sources publish current editable model values, unsynchronized; application calculations are explicit. CLI: `iedlab simulate -station -file station.scd`. See [station orchestration](api/engineering.md#run-the-complete-station).

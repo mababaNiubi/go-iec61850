@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0 - 2026-11-07
+
+- Inspect primary equipment, per-DO diagnostics, typed points and dataset order through the SCL catalog.
+- Serve engineered URCB/BRCB reports, buffering, GI, integrity, segmentation and explicit history resumption.
+- Add modeled binary control selection/cancellation/termination, ordinary SP callbacks, and SG/SE editing and activation.
+- Connect multiple simulated IEDs through a shared software Ethernet bus and resolve SMV ExtRef inputs.
+- Extend IEDLab with engineering catalogs, online model checks and actual report subscriptions. Add station and settings examples.
+- Fix change reporting after SP writes and active SG changes through one coherent publication boundary.
+- Acknowledge enhanced controls before execution and correlated positive/negative command termination.
+- Accept UTF-8 BOM, unnamed enum ordinals, service-tracking basic types, and spaced ISO selectors/AP titles.
+- Model bounded DO/SDO/DA/BDA arrays, indexed instance values, and nested FCDA alternate access.
+- Add public station orchestration and modeled MU sources, plus shared GOOSE/SV inputs in the browser and CLI.
+- Verify the reference SCL corpus and independent C nested-array directory/read/dataset access.
+
 ## 1.2.0 - 2026-11-07
 
 - Add public `ied` clients for all four immediate control models, correlated enhanced command termination, and bounded URCB subscriptions with one unsolicited-message dispatcher.

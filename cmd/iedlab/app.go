@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mababaNiubi/go-iec61850/internal/sample"
 	"github.com/mababaNiubi/go-iec61850/internal/workbench"
 )
 
@@ -78,6 +79,7 @@ func simulateApp(args []string) error {
 	gooseMode := flags.String("goose", "memory", "off, memory or ethernet")
 	iface := flags.String("interface", "", "Ethernet interface for -goose ethernet")
 	controls := flags.Bool("controls", true, "allow modeled direct binary controls in the simulator")
+	stationMode := flags.Bool("station", false, "start all server IEDs on a shared software bus, with engineered GOOSE/SV inputs")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -86,6 +88,31 @@ func simulateApp(args []string) error {
 		return err
 	}
 	defer m.Close()
+	if *stationMode {
+		if *file == "" {
+			doc, err = m.Import("station.scd", sample.StationSCL())
+			if err != nil {
+				return err
+			}
+		}
+		station, err := m.StartStationWithControls(doc.ID, *controls)
+		if err != nil {
+			return err
+		}
+		for _, device := range station.Devices {
+			fmt.Printf("%s/%s · MMS %s\n", device.IED, device.AP, device.Address)
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		err = m.WaitStation(ctx, doc.ID)
+		if stopErr := m.StopStation(doc.ID); stopErr != nil {
+			return stopErr
+		}
+		if err == context.Canceled {
+			return nil
+		}
+		return err
+	}
 	if *file == "" {
 		doc, err = m.Import("bay.scd", workbench.SampleSCL())
 		if err != nil {

@@ -43,6 +43,10 @@ func (m *Manager) Start(id string, opt SimulationOptions) (DeviceSummary, error)
 	}
 	d.mu.Lock()
 	m.mu.RUnlock()
+	if d.station != "" {
+		d.mu.Unlock()
+		return DeviceSummary{}, fmt.Errorf("stop the station before starting an individual IED")
+	}
 	if d.run != nil {
 		select {
 		case <-d.run.done:
@@ -87,6 +91,10 @@ func (m *Manager) Stop(id string) error {
 		return err
 	}
 	d.mu.Lock()
+	if d.station != "" {
+		d.mu.Unlock()
+		return fmt.Errorf("stop the station to stop this IED")
+	}
 	if d.run != nil {
 		err = d.run.stop()
 		if err == nil {
@@ -139,6 +147,11 @@ func (d *device) bindControls(log *journal) {
 			continue
 		}
 		c := Control{Reference: p.Reference}
+		model := mms.DomainName(p.Name.Domain, strings.TrimSuffix(strings.Replace(p.Name.Item, "$CO$", "$CF$", 1), "$Oper")+"$ctlModel")
+		if value, err := d.ied.Read(context.Background(), mms.Access(model)); err == nil {
+			mode, _ := value.Int()
+			c.Model = int(mode)
+		}
 		status := strings.Replace(p.Name.Item, "$CO$", "$ST$", 1)
 		status = strings.TrimSuffix(status, "$Oper") + "$stVal"
 		n := mms.DomainName(p.Name.Domain, status)
@@ -156,7 +169,7 @@ func (d *device) bindControls(log *journal) {
 		parts := strings.Split(n.Item, "$")
 		c.Feedback = n.Domain + "/" + parts[0] + "." + strings.Join(parts[2:], ".")
 		target, kind := n, t.Kind
-		err = d.ied.OnOperate(p.Name, func(ctx context.Context, cmd scl.Command) error {
+		err = d.ied.OnControl(p.Name, func(ctx context.Context, cmd scl.Command) error {
 			if !d.controlEnabled.Load() || d.interlocked.Load() {
 				return mms.ObjectAccessDenied
 			}

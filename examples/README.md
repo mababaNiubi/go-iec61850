@@ -11,6 +11,8 @@ Run all commands from the repository root.
 | Control an IED, inspect acknowledgement and subscribe to URCB | [Device client](ied/control-report/README.md) | `go run ./examples/ied/control-report` |
 | Decode engineered SV samples without hard-coded offsets | [SCL/SV](sv/scl/README.md) | `go run ./examples/sv/scl` |
 | Integrate a modeled device and a station from SCD | [Breaker model, driver, and monitor](scd/breaker/README.md) | `go run ./examples/scd/breaker` |
+| Connect SV acquisition, MMS control/reporting and GOOSE inputs from one SCD | [Software station](scd/station/README.md) | `go run ./examples/scd/station` |
+| Validate SP values and edit, confirm and activate setting groups | [Settings](ied/settings/README.md) | `go run ./examples/ied/settings` |
 | Connect, read an integer, write, and read it back | [MMS read/write](mms/read-write/main.go) | `go run ./examples/mms/read-write` |
 | Batch access, partial failures, and array/structure selection | [MMS batch reads](mms/read-batch/main.go) | `go run ./examples/mms/read-batch` |
 | Discover domains, names, and declared types | [MMS browsing](mms/browse/main.go) | `go run ./examples/mms/browse` |

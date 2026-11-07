@@ -19,6 +19,8 @@ func (t *doType) UnmarshalXML(dec *xml.Decoder, start xml.StartElement) error {
 			t.ID = a.Value
 		case "cdc":
 			t.CDC = a.Value
+		case "desc":
+			t.Description = a.Value
 		}
 	}
 	for {

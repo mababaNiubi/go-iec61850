@@ -767,7 +767,7 @@ tbody tr.selected td:first-child {
 }
 .stream-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(310px, 100%), 1fr));
   gap: 16px;
 }
 .stream-card {
@@ -776,6 +776,13 @@ tbody tr.selected td:first-child {
   border-radius: 7px;
   padding: 20px;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+.stream-grid + .stream-grid {
+  margin-top: 16px;
+}
+.stream-card pre {
+  white-space: pre-wrap;
 }
 .stream-card h3 {
   font-size: 13px;
@@ -1205,4 +1212,30 @@ dialog select {
 }
 .logical-tree button span:first-child {
   color: #c2ccd7;
+}
+.station-inputs {
+  border: 1px solid var(--line, #d5dce5);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+.station-inputs p {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+.station-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 8px;
+}
+.station-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+}
+.station-reading small {
+  overflow-wrap: anywhere;
+  color: #68788c;
 }

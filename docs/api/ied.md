@@ -59,7 +59,7 @@ The SDK never automatically replays an uncertain command. [Runnable control and 
 
 ## Subscribe to an engineered URCB
 
-Use a control-block instance allocated to this client. Configure its dataset, trigger options and OptFlds in the IED; the subscription preserves them. Reports must identify the dataset and ConfRev. Segmented reports and buffered-report replay are outside this API's current scope.
+Use a control-block instance allocated to this client. The subscription uses its engineered dataset, trigger options and OptFlds. It validates optional dataset/revision fields when present and delivers complete reassembled reports. `SubscribeBRCB` supports buffered replay with an explicit EntryID cursor. See the [engineering API](engineering.md) for modeled reporting, resume and settings.
 
 ```go
 block, err := ied.ObjectName("LD", "RP", "LLN0.Events01")
@@ -123,7 +123,7 @@ return runtime.Wait(ctx)
 
 Start owns TCP connections, its listener, frame links and protocol workers. `Address()` reports the actual address when using port zero. Parent cancellation or `Stop(ctx)` stops transport; the model remains available to update and restart. Local acquisitions use `model.Update`; hardware execution uses `model.OnOperate`. The modeled server currently supports ordinary direct SPC/DPC callbacks; the client's four control modes do not add those modes to a simulated server automatically.
 
-Memory mode encodes, publishes and receives GOOSE Ethernet frames without a NIC. Ethernet mode requires `Interface` and uses its actual source MAC. `Observe` is an optional concurrent callback for events and errors; return promptly and perform shutdown outside it. An optional Store decorator can trace real MMS accesses. `simulator.NewMemoryLink` also implements SV FrameIO for application tests; Runtime itself starts MMS and GOOSE, not an SV sampling clock.
+Memory mode encodes, publishes and receives GOOSE Ethernet frames without a NIC. Ethernet mode requires `Interface` and uses its actual source MAC. `Observe` is an optional concurrent callback for events and errors. Return promptly and perform shutdown outside it. An optional Store decorator can trace real MMS accesses. `MemoryBus` connects independent runtimes, and `Options.SV` starts software sampled-value sources on that bus. See the [station example](../../examples/scd/station/README.md).
 
 ## Import an SV model and share one reader
 

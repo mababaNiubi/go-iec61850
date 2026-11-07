@@ -29,6 +29,9 @@ func run() error {
 	defer cancel()
 	cfg := ied.Config{Origin: ied.Origin{Category: 2, ID: []byte("example-station")}}
 	if *address == "" {
+		if *block == "" {
+			*block = "LLN0.events01"
+		}
 		system, err := scl.ParseFile(*file)
 		if err != nil {
 			return err

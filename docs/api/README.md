@@ -1,5 +1,7 @@
 # API guide
 
+[Engineering scenarios](engineering.md) cover primary-equipment point selection, modeled reporting, BRCB resume, settings and a complete software station. These additions are available in the development checkout.
+
 English | [简体中文](README.zh-CN.md)
 
 Choose the task you are implementing. Each guide explains the objects, parameters, results, and a runnable example.

@@ -16,7 +16,7 @@ mkdir -p _local/reports/unit
 go test -json -count=1 -timeout=120s "${race[@]}" ./... | tee _local/reports/unit/go-tests.jsonl
 go vet ./...
 if $examples; then
-    for example in mms/read-write mms/read-batch mms/browse mms/named-list mms/report goose/publish-subscribe sv/publish-subscribe sv/data-layout scd/breaker ied/control-report sv/scl; do
+    for example in mms/read-write mms/read-batch mms/browse mms/named-list mms/report goose/publish-subscribe sv/publish-subscribe sv/data-layout scd/breaker ied/control-report sv/scl scd/station ied/settings; do
         label=${example//\//-}
         go run "./examples/$example" | tee "_local/reports/unit/$label.log"
     done

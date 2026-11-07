@@ -1,5 +1,7 @@
 # IEDLab 调试工作台
 
+选定 IED 后打开“工程选点与报告”。一次设备路径可以筛选关联测点，可导出点表或与当前 MMS 连接核对类型和数据集顺序。报告卡片通过真实 MMS 订阅 URCB/BRCB 并总召，日志显示成员、包含原因和 EntryID。BRCB 可填写十六进制续传游标。运行时不支持的 DO 会显示诊断，工程目录仍可查看。
+
 [English](workbench.md) | 简体中文
 
 IEDLab 将命令行调试和浏览器工作台整合为一个 Go 程序。前端静态文件嵌入可执行文件，支持离线使用。应用从当前源码工作树运行。
@@ -67,7 +69,7 @@ go run ./cmd/iedlab inspect -file internal/sample/bay.scd -ied StationHMI -ap S1
 | [internal/workbench/web/app.js](../internal/workbench/web/app.js) | 在 `api`、`selectDevice`、`savePoint`、`operate` 里跟踪网页交互 |
 | [examples/scd/breaker/process.go](../examples/scd/breaker/process.go) | 把采集、闭锁和执行结果接到真实设备驱动的接口 |
 
-`bindControls` 是工作台的虚拟执行器，处理已建模的 SPC/DPC 普通安全直接控制，先检查会话闭锁，再更新匹配的 ST 反馈。接入硬件时可复用公开的 `scl.IED.OnOperate` 和 `Update` 接口，参考 SCD 示例的驱动实现。[SCD API 与常用路径](api/scl.zh-CN.md)
+`bindControls` 是工作台的虚拟执行器，通过 OnControl 处理已建模的 SPC/DPC 控制，先检查会话闭锁，再更新匹配的 ST 反馈。接硬件时用 OnControl 或普通直控接口 OnOperate 绑定驱动，用 Update 上送独立反馈。[SCD API 与常用路径](api/scl.zh-CN.md)
 
 ```mermaid
 flowchart LR
@@ -112,3 +114,5 @@ go run ./cmd/iedlab protocol goose-subscriber -input-frame _local/frames/goose.b
 构建脚本现在输出一个 `iedlab` 程序。原来的六个协议命令统一归入 `iedlab protocol`，保留诊断参数。`scdinspect` 合并为 `iedlab inspect`。独立 API 示例继续供学习库调用。
 
 协议生命周期已移入公开的 [simulator 包](../simulator/runtime.go)，客户端控制使用公开的 [ied 包](api/ied.zh-CN.md)。其他程序可以直接导入，无需引用 `internal/workbench`。
+
+点击“整站示例 → 启动整站”，多个 IED 会共享 GOOSE/SV 软件总线，输入面板显示 ExtRef 值。MU 默认发布可编辑的当前模型值，声明为未同步；设备计算逻辑需显式实现。CLI：`iedlab simulate -station -file station.scd`。参见[整站接入](api/engineering.zh-CN.md)。
