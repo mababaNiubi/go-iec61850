@@ -20,6 +20,7 @@ var (
 	ErrEventOverflow = errors.New("goose: event queue overflow")
 )
 
+// EventKind identifies state changes, retransmissions, expiry or recovery.
 type EventKind uint8
 
 const (
@@ -29,6 +30,7 @@ const (
 	Recovered
 )
 
+// String returns a readable event kind, or unknown for an invalid value.
 func (k EventKind) String() string {
 	switch k {
 	case StateChanged:
@@ -43,6 +45,8 @@ func (k EventKind) String() string {
 	return "unknown"
 }
 
+// Event carries an accepted frame or expiry notification. ReceivedAt is local receive time
+// and ValidUntil is the local usability deadline.
 type Event struct {
 	Kind       EventKind
 	Frame      Frame
@@ -50,6 +54,8 @@ type Event struct {
 	ValidUntil time.Time
 }
 
+// SubscriptionConfig pins stream identity and local acceptance policy. EventBuffer zero
+// selects 64 (maximum 65536); Clock defaults to the system clock.
 type SubscriptionConfig struct {
 	Destination            [6]byte
 	Source                 *[6]byte
@@ -68,6 +74,8 @@ type SubscriptionConfig struct {
 	Clock                    Clock
 	EventBuffer              int
 }
+
+// SubscriberStats is a concurrency-safe snapshot of accepted, filtered, rejected and lifetime counters.
 type SubscriberStats struct{ Accepted, Rejected, Filtered, Stale, Expired uint64 }
 
 // Subscriber validates a complete frame before changing data or its lifetime.
@@ -103,8 +111,9 @@ func multicastDestination(mac [6]byte) bool {
 	return mac[0]&1 != 0 && mac != ([6]byte{255, 255, 255, 255, 255, 255})
 }
 
-// NewSubscriber 创建过滤和状态检查对象。VLANID=nil 接受有/无标签，
-// ConfRev=0 固定首次有效修订；这些零值不表示忽略所有后续配置变化。
+// NewSubscriber creates stream filters and state validation. VLANID nil accepts tagged and
+// untagged frames; ConfRev zero pins the first accepted revision instead of ignoring later
+// changes.
 func NewSubscriber(cfg SubscriptionConfig) (*Subscriber, error) {
 	if !subscriptionReference(cfg.GoCBRef, false) || !subscriptionReference(cfg.DataSet, false) || !subscriptionReference(cfg.GoID, true) || !multicastDestination(cfg.Destination) {
 		return nil, fmt.Errorf("goose: invalid subscription filter")
@@ -230,19 +239,35 @@ func (s *Subscriber) Process(f Frame) (Event, error) {
 	s.stats.Accepted++
 	return Event{Kind: kind, Frame: f.Clone(), ReceivedAt: now, ValidUntil: s.deadline}, nil
 }
+
+// CheckTimeout transitions an overdue accepted stream to expired once and returns its event
+// with true. It does not enqueue the event; poll it when using Receiver.
 func (s *Subscriber) CheckTimeout() (Event, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.expireLocked(s.cfg.Clock.Now())
 }
+
+// Snapshot returns an independent last frame and whether it is currently valid. The last
+// data can remain present after expiry.
 func (s *Subscriber) Snapshot() (Frame, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.last.Clone(), s.valid && s.cfg.Clock.Now().Before(s.deadline)
 }
+
+// Stats returns a locked copy of the stream counters.
 func (s *Subscriber) Stats() SubscriberStats { s.mu.Lock(); defer s.mu.Unlock(); return s.stats }
-func (s *Subscriber) LastError() error       { s.mu.Lock(); defer s.mu.Unlock(); return s.lastError }
-func (s *Subscriber) Events() <-chan Event   { return s.events }
+
+// LastError returns the most recently recorded rejection, which may remain set after later
+// valid traffic.
+func (s *Subscriber) LastError() error { s.mu.Lock(); defer s.mu.Unlock(); return s.lastError }
+
+// Events returns the bounded queue populated only by Subscriber.Run. Run
+// returns ErrEventOverflow for a slow consumer; this channel is not closed by
+// Run. Select on the owning context/Run result and do not range until closure.
+// Receiver delivers callbacks instead of populating this queue.
+func (s *Subscriber) Events() <-chan Event { return s.events }
 func (s *Subscriber) emitEvent(ctx context.Context, e Event) error {
 	select {
 	case s.events <- e:

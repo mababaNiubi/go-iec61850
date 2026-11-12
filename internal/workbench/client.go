@@ -24,6 +24,10 @@ type connection struct {
 	services      *ied.Client
 	mu            sync.Mutex
 	subscriptions map[mms.ObjectName]*ied.ReportSubscription
+	operations    sync.Mutex // user control/setting actions, separate from report delivery
+	selections    map[string]*ied.Selection
+	records       []ReportRecord
+	nextRecord    uint64
 }
 
 // Connect uses the optional engineering model for ISO addressing. The context

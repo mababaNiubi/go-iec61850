@@ -192,13 +192,21 @@ func (d *IED) commitLocked(ctx context.Context, changes ...mms.Assignment) error
 	return nil
 }
 
+// Domains implements mms.Store by listing the selected device domains.
 func (d *IED) Domains(ctx context.Context) ([]string, error) { return d.model.Domains(ctx) }
+
+// Names implements mms.Store by listing declared names within the given MMS scope and domain.
 func (d *IED) Names(ctx context.Context, s mms.Scope, domain string) ([]string, error) {
 	return d.model.Names(ctx, s, domain)
 }
+
+// Type implements mms.Store by returning the declaration for a named variable.
 func (d *IED) Type(ctx context.Context, n mms.ObjectName) (mms.TypeSpec, error) {
 	return d.model.Type(ctx, n)
 }
+
+// Read implements mms.Store, including association-specific control/report/settings views.
+// Use ReadBatch for a coherent multi-member acquisition.
 func (d *IED) Read(ctx context.Context, a mms.VariableAccess) (mms.Value, error) {
 	if value, handled, err := d.readService(ctx, a); handled {
 		return value, err
@@ -209,21 +217,39 @@ func (d *IED) Read(ctx context.Context, a mms.VariableAccess) (mms.Value, error)
 // ReadSnapshot reads named values under one model lock. It is useful when a
 // sampled-value source needs a coherent multi-member acquisition image.
 func (d *IED) ReadSnapshot(ctx context.Context, names ...mms.ObjectName) ([]mms.Value, error) {
+	accesses := make([]mms.VariableAccess, len(names))
+	for i, name := range names {
+		accesses[i] = mms.Access(name)
+	}
+	results := d.ReadBatch(ctx, accesses)
+	values := make([]mms.Value, len(results))
+	for i, result := range results {
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		values[i] = result.Value
+	}
+	return values, nil
+}
+
+// ReadBatch keeps one acquisition image across all MMS Read members, including
+// alternate access and association-owned services such as SBO and SG/SE.
+func (d *IED) ReadBatch(ctx context.Context, accesses []mms.VariableAccess) []mms.ReadResult {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	values := make([]mms.Value, 0, len(names))
-	for _, name := range names {
-		access := mms.Access(name)
-		value, handled, err := d.readServiceLocked(ctx, access)
+	results := make([]mms.ReadResult, len(accesses))
+	for i, access := range accesses {
+		if err := ctx.Err(); err != nil {
+			results[i].Error = err
+			continue
+		}
+		value, handled, err := d.readAccessServiceLocked(ctx, access)
 		if !handled {
 			value, err = d.model.Read(ctx, access)
 		}
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, value)
+		results[i] = mms.ReadResult{Value: value, Error: err}
 	}
-	return values, nil
+	return results
 }
 
 var _ mms.Store = (*IED)(nil)

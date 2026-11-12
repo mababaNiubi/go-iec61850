@@ -29,6 +29,8 @@ type Receiver struct {
 	running         atomic.Bool
 }
 
+// Add reserves sub for this receiver and registers validation and synchronous
+// notification callbacks. Do not also use Subscriber.Run or Process on sub.
 // The returned remove waits for current dispatch; call it outside callbacks.
 func (r *Receiver) Add(sub *Subscriber, validate func(Frame) error, notify func([]Event, error)) (remove func(), err error) {
 	if sub == nil || !sub.running.CompareAndSwap(false, true) {
@@ -57,6 +59,10 @@ func (r *Receiver) Add(sub *Subscriber, validate func(Frame) error, notify func(
 		})
 	}, nil
 }
+
+// Process dispatches one decoded frame synchronously to matching routes. Validation
+// precedes state changes; callbacks may receive an error with no events. Poll subscribers
+// separately for expiry.
 func (r *Receiver) Process(frame Frame) {
 	r.processing.Lock()
 	defer r.processing.Unlock()
@@ -97,6 +103,10 @@ func (r *Receiver) Process(frame Frame) {
 		}
 	}
 }
+
+// Run reads and decodes frames until cancellation or a read error. It owns the read loop,
+// not the link. Callbacks run synchronously; poll CheckTimeout separately when traffic
+// stops.
 func (r *Receiver) Run(ctx context.Context, link FrameIO) error {
 	if link == nil || !r.running.CompareAndSwap(false, true) {
 		return fmt.Errorf("sv: receiver already running or missing link")

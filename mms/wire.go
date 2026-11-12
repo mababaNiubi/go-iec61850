@@ -10,6 +10,7 @@ import (
 	"github.com/mababaNiubi/go-iec61850/internal/ber"
 )
 
+// Scope selects the VMD, domain or association namespace for an MMS object.
 type Scope uint8
 
 const (
@@ -24,11 +25,21 @@ type ObjectName struct {
 	Domain, Item string
 }
 
+// DomainName constructs a domain-scoped name. Service calls validate identifiers before
+// sending.
 func DomainName(domain, item string) ObjectName {
 	return ObjectName{Scope: DomainScope, Domain: domain, Item: item}
 }
-func VMDName(item string) ObjectName         { return ObjectName{Scope: VMDScope, Item: item} }
+
+// VMDName constructs a VMD-scoped name.
+func VMDName(item string) ObjectName { return ObjectName{Scope: VMDScope, Item: item} }
+
+// AssociationName constructs an association-scoped name whose lifetime belongs to that
+// connection.
 func AssociationName(item string) ObjectName { return ObjectName{Scope: AssociationScope, Item: item} }
+
+// String formats domain-scoped names as domain/item and other scopes as item. Use the Scope
+// field when identity must distinguish VMD and association names.
 func (n ObjectName) String() string {
 	if n.Scope == DomainScope {
 		return n.Domain + "/" + n.Item
@@ -286,6 +297,9 @@ type VariableAccess struct {
 	Name      ObjectName
 	Selection Selection
 }
+
+// Selection identifies a component or array element. Use either legacy Component/Index or
+// Path, never both.
 type Selection struct {
 	Component string
 	Index     *uint32
@@ -294,10 +308,15 @@ type Selection struct {
 	Path []Selector
 }
 
+// Access constructs an unselected variable access.
 func Access(n ObjectName) VariableAccess { return VariableAccess{Name: n} }
+
+// Element constructs a zero-based array selection for a named variable.
 func Element(n ObjectName, index uint32) VariableAccess {
 	return VariableAccess{Name: n, Selection: Selection{Index: &index}}
 }
+
+// Member constructs a structure-component selection for a named variable.
 func Member(n ObjectName, component string) VariableAccess {
 	return VariableAccess{Name: n, Selection: Selection{Component: component}}
 }

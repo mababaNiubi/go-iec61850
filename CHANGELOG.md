@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0 - 2026-11-12
+
+- Serve coherent multi-member MMS reads through an optional batch store capability, preserving existing Read decorators.
+- Retain FCDA alternate access in GOOSE layouts and input/quality resolution.
+- Inspect SubNetworks, ServerAt ports, scoped inputs, report capabilities and primary-equipment terminals; compare model revisions.
+- Isolate station buses by SubNetwork and expose source quality, receive expiry and complete ASDU/GOOSE application callbacks.
+- Discover online IED services without SCL and read typed current dataset snapshots independently of buffered history.
+- Add IEDLab online report, control and settings panels, structured session history and engineering-network comparison.
+- Refactor the station example to consume the public station callbacks and validate its process-bus connection.
+- Reorganize English/Chinese API workflows, correct stale capability descriptions, document lifecycle/default/error contracts and add executable GoDoc examples.
+
 ## 1.3.0 - 2026-11-07
 
 - Inspect primary equipment, per-DO diagnostics, typed points and dataset order through the SCL catalog.

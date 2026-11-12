@@ -19,7 +19,7 @@ From this checkout, run `go run ./examples/scd/breaker` to see an SCD-defined br
 ## Install
 
 ```bash
-go get github.com/mababaNiubi/go-iec61850@v1.3.0
+go get github.com/mababaNiubi/go-iec61850@v1.4.0
 ```
 
 Import the package for the protocol you need, such as `github.com/mababaNiubi/go-iec61850/mms`.
@@ -67,6 +67,7 @@ This example uses a temporary loopback server by default. Add `-address host:por
 
 | Task | Guide |
 |---|---|
+| Online discovery, current dataset reads, BRCB replay, engineering networks and station callbacks | [Engineering workflows](docs/api/engineering.md) |
 | Device controls, URCB subscriptions, embedded simulation and SCL-defined SV layouts | [Device integration API](docs/api/ied.md) |
 | Read/write, batch access, arrays and structures, browsing, named lists, reports, or a custom server | [MMS API](docs/api/mms.md) |
 | Convert MMS values to Go integers, booleans, floats, strings, arrays, or time | [Values and types](docs/api/data.md) |
@@ -103,7 +104,7 @@ The `iedlab` executable is written to `_local/bin/<os>-<arch>/`. Production buil
 
 ## Scope and license
 
-Version 1.3.0 provides MMS, ordinary Layer 2 GOOSE/SV, engineered URCB/BRCB reporting and replay, immediate binary controls, SP/SG settings, bounded SCL arrays and nested alternate access. The [documented profiles](docs/api/scl.md) describe supported modeling. Full ACSI/SCL coverage, online GoCB/SVCB reconfiguration, R-GOOSE/R-SV, PTP, and IEC 62351 remain outside this scope. A version tag does not imply IEC conformance certification.
+Version 1.4.0 provides MMS, ordinary Layer 2 GOOSE/SV, engineered URCB/BRCB reporting and replay, immediate binary controls, SP/SG settings, bounded SCL arrays and nested alternate access. The [documented profiles](docs/api/scl.md) describe supported modeling. Full ACSI/SCL coverage, online GoCB/SVCB reconfiguration, R-GOOSE/R-SV, PTP, and IEC 62351 remain outside this scope. A version tag does not imply IEC conformance certification.
 
 Start with the [engineering API](docs/api/engineering.md) and [station example](examples/scd/station/README.md). IEDLab's **Station sample → Start station** starts the engineered IEDs and exposes GOOSE/SV inputs in the browser. The same workspace runs headlessly with `iedlab simulate -station`.
 

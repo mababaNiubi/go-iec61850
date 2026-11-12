@@ -2,6 +2,9 @@
 
 [English](engineering.md)
 
+[选点](#按一次设备找测点) · [报告服务](#由-scd-启动报告服务) · [BRCB 续传](#断线后续传-brcb) · [控制与定值](#接执行器普通参数和定值区) · [整站](#浏览器和-cli-启动完整站点) · [在线现值](#在线发现报告历史与现值) · [网络与绑定](#工程网络与自定义设备逻辑)
+
+
 从仓库根目录运行两个完整示例。
 
 ```sh
@@ -165,3 +168,36 @@ DO/SDO/DA/BDA 数组支持 1..4096 个元素，并受总展开预算限制。DOI
 未绑定数据集的 ReportControl 可以检查，但不能启用。禁用时可将 DatSet 切到同一逻辑设备的静态数据集，同时增加 ConfRev。BRCB 换数据集前需显式清空旧缓冲。动态创建的 MMS 变量列表暂不能绑定为报告数据集。
 
 增强二进制控制先回复 Operate 受理成功，再调用 OnControl 执行设备动作并返回正/负 CommandTermination。回调失败不再混成受理拒绝；客户端能够区分 Acknowledged 与 Terminated。执行上下文随关联关闭取消，普通安全控制仍同步执行回调。
+
+## 在线发现、报告历史与现值
+
+通过 `client.Discover(ctx, ied.DiscoveryOptions{})`，仅使用地址就能发现实际
+LD、类型、数据集、RP/BR 和 SGCB。检查 Diagnostics 与 Truncated 判断完整性。
+一次设备、网络和 ExtRef 信息由 SCL 提供。
+
+`subscription.ReadSnapshot(ctx)` 与 `client.ReadDataSet(ctx, name)` 独立读取
+当前数据集，调用 Leaves() 展开 FCD 中的值、品质和时间。BRCB 报告中的 GI
+原因可能来自以前的会话。现值快照没有 EntryID，不推进历史归档游标。
+不同 FCDA 的采集一致性取决于对端，相关值、q、t 优先采用一个 FCD 成员。
+内置 Model 和 SCL IED 已实现同一采集快照的批读，自定义存储可实现
+mms.BatchReader，读取装饰器需要明确转发这个能力。
+
+## 工程网络与自定义设备逻辑
+
+`system.Project()` 保留子网、AP/ServerAt、一次设备及支持范围内的语义诊断。
+`system.Inputs(ied, ap)` 保留接收侧 LD/LN 和声明序号。InputReference.Key()
+允许 intAddr 省略或跨 LN 重用，ResolveGOOSEInput/ResolveSVInput 直接解析
+这个引用。旧 intAddr 查询方法继续可用。CompareCatalog 对照类型、单位、
+q/t 绑定、FCDA 顺序与选择路径、报告版本和输入源。ReportSettings 的
+Fix/Conf/Dyn 声明决定 RCB 字段能否在线修改。这些检查需配合对应版本的
+外部 XSD/NSD 验证。
+
+StartStation 按 SubNetwork 隔离总线，ServerAt 表达同一服务器的另一物理端口。
+StrictInputs=true 时未绑定或不连通的输入会阻止启动。默认模式保留输入诊断。
+OnSample 每次交付同一 ASDU 的全部输入，包含未变化的样本、超时与恢复事件。
+OnGOOSE 交付状态事件，Observe 用于界面变化通知。回调及时返回，由拥有者关闭
+站级运行。完整实现见 examples/scd/station，业务计算和执行器可替换。
+
+InputReading 分别保留最后数据、品质、接收时间、Valid、State、ValidUntil
+和 LastGoodAt。非零品质保守标记为不可用并保留全部品质位，SampleSync 独立
+展示。GOOSE 使用 TAL，SV 使用 InputTimeout，NominalFrequency 支持 50/60 Hz。

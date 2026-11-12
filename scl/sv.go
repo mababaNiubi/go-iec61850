@@ -90,6 +90,8 @@ func (s *System) SVStreams(ied, ap string) ([]sv.Profile, error) {
 	return out, nil
 }
 
+// SVStream resolves a complete IED/AP/LDevice/SVCB reference to an engineered multicast SV
+// profile. It opens no transport.
 func (s *System) SVStream(reference string) (sv.Profile, error) {
 	parts := strings.Split(reference, "/")
 	if len(parts) != 4 {

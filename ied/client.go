@@ -9,16 +9,22 @@ import (
 	"github.com/mababaNiubi/go-iec61850/mms"
 )
 
+// Origin identifies the command issuer. Category is 0..8 and ID is at most 64 bytes; it is not
+// an authentication credential.
 type Origin struct {
 	Category int
 	ID       []byte
 }
+
+// Config configures the MMS association and control origin. Zero values use the library
+// defaults.
 type Config struct {
-	MMS    mms.Config
+	MMS mms.Config
+	// A zero Origin selects category 2 and ID "go-iec61850".
 	Origin Origin
 }
 
-// Client adds controls and URCB subscriptions to an MMS association. Confirmed
+// Client adds controls, URCB/BRCB subscriptions and online discovery to an MMS association. Confirmed
 // MMS services remain available through its methods and MMS(). The wrapper owns
 // its lifetime and is the ONLY reader of the underlying raw Reports channel.
 // Applications receive decoded reports from ReportSubscription.Events instead.
@@ -34,6 +40,8 @@ type Client struct {
 	dispatched                chan struct{}
 }
 
+// Dial establishes an owned IEC 61850 client at host:port. ctx bounds connection setup; each
+// later operation has its own context. Defer Close on success.
 func Dial(ctx context.Context, address string, cfg Config) (*Client, error) {
 	if err := validateOrigin(cfg.Origin); err != nil {
 		return nil, err
@@ -73,28 +81,55 @@ func validateOrigin(origin Origin) error {
 	}
 	return nil
 }
+
+// Close releases owned transports and workers. Defer it immediately after successful
+// construction.
 func (c *Client) Close() error { err := c.raw.Close(); <-c.dispatched; return err }
 
 // MMS provides advanced confirmed services. Its Reports channel is owned by
 // this wrapper; consuming that channel externally would steal active reports.
-func (c *Client) MMS() *mms.Client      { return c.raw }
+func (c *Client) MMS() *mms.Client { return c.raw }
+
+// Done closes when the MMS association shuts down. Call Close to also wait for
+// the report dispatcher; Err returns the association failure, if any.
 func (c *Client) Done() <-chan struct{} { return c.raw.Done() }
-func (c *Client) Err() error            { return c.raw.Err() }
+
+// Err returns the terminal failure, or nil while no failure has been recorded. It is safe to
+// call concurrently.
+func (c *Client) Err() error { return c.raw.Err() }
+
+// Read obtains one remote MMS value. Convert it with the typed Value accessors and handle a
+// mismatched kind as an error.
 func (c *Client) Read(ctx context.Context, name mms.ObjectName) (mms.Value, error) {
 	return c.raw.Read(ctx, name)
 }
+
+// ReadMultiple reads ordered accesses in one confirmed request. Check both the request error
+// and each ReadResult.Error.
 func (c *Client) ReadMultiple(ctx context.Context, accesses ...mms.VariableAccess) ([]mms.ReadResult, error) {
 	return c.raw.ReadMultiple(ctx, accesses...)
 }
+
+// Write sends one remote assignment. A transport timeout after submission does not prove that
+// the IED rejected the write.
 func (c *Client) Write(ctx context.Context, name mms.ObjectName, value mms.Value) error {
 	return c.raw.Write(ctx, name, value)
 }
+
+// GetVariableAccessAttributes reads the remote declared type. ctx bounds this request; it does
+// not read the current process value.
 func (c *Client) GetVariableAccessAttributes(ctx context.Context, name mms.ObjectName) (mms.TypeSpec, error) {
 	return c.raw.GetVariableAccessAttributes(ctx, name)
 }
+
+// GetNamedListAttributes reads ordered dataset members, preserving alternate access for arrays
+// and structures.
 func (c *Client) GetNamedListAttributes(ctx context.Context, name mms.ObjectName) (mms.NamedList, error) {
 	return c.raw.GetNamedListAttributes(ctx, name)
 }
+
+// Conclude requests graceful association release. Close remains available for unconditional
+// local cleanup.
 func (c *Client) Conclude(ctx context.Context) error {
 	err := c.raw.Conclude(ctx)
 	// A busy-association error leaves MMS open; do not wait for a dispatcher

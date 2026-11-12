@@ -14,11 +14,17 @@ import (
 )
 
 var (
-	ErrRejected     = errors.New("ied: command rejected")
+	// ErrRejected means the peer or local declaration checks rejected the command.
+	ErrRejected = errors.New("ied: command rejected")
+	// ErrNotSubmitted means Oper was not submitted; inspect the wrapped cause.
 	ErrNotSubmitted = errors.New("ied: operation was not submitted")
-	ErrUnconfirmed  = errors.New("ied: operation or termination unconfirmed")
+	// ErrUnconfirmed means acceptance or enhanced termination is uncertain.
+	// Inspect ControlResult and independent ST feedback before any retry decision.
+	ErrUnconfirmed = errors.New("ied: operation or termination unconfirmed")
 )
 
+// ControlModel is the online ctlModel value: direct or SBO, with normal or enhanced
+// termination semantics.
 type ControlModel int
 
 const (
@@ -29,6 +35,8 @@ const (
 	SBOEnhanced
 )
 
+// ControlOptions supplies the command timestamp and explicit test/interlock/synchrocheck
+// flags. A zero Time uses the local clock; operations are immediate.
 type ControlOptions struct {
 	Test, SynchroCheck, InterlockCheck bool
 	Time                               time.Time // zero uses the local clock; operTm remains immediate
@@ -52,6 +60,8 @@ type Control struct {
 	model  ControlModel
 }
 
+// Control retains one remote object and its declared Oper layout. Obtain a fresh Control after
+// device reconfiguration.
 func (c *Client) Control(ctx context.Context, reference string) (*Control, error) {
 	domain, object, ok := strings.Cut(reference, "/")
 	if !ok {
@@ -83,11 +93,19 @@ func (c *Client) Control(ctx context.Context, reference string) (*Control, error
 	}
 	return control, nil
 }
+
+// ValueType returns the ctlVal declaration needed to construct a correctly typed command
+// value.
 func (o *Control) ValueType() (data.TypeSpec, error) {
 	t, _, err := data.ResolveComponent(o.spec, "ctlVal")
 	return t, err
 }
+
+// Model returns the ctlModel discovered when this Control was created.
 func (o *Control) Model() ControlModel { return o.model }
+
+// Operate performs the modeled control procedure. Inspect ControlResult even when err is
+// non-nil: acceptance, termination and equipment feedback are separate evidence.
 func (c *Client) Operate(ctx context.Context, reference string, value data.Value, options ControlOptions) (ControlResult, error) {
 	o, err := c.Control(ctx, reference)
 	if err != nil {
@@ -184,6 +202,8 @@ func after(err error) error {
 	return fmt.Errorf("%w: %w", ErrUnconfirmed, err)
 }
 
+// Operate performs the modeled control procedure. Inspect ControlResult even when err is
+// non-nil: acceptance, termination and equipment feedback are separate evidence.
 func (o *Control) Operate(ctx context.Context, value data.Value, options ControlOptions) (ControlResult, error) {
 	c := o.client
 	result := ControlResult{Model: o.model}
@@ -280,6 +300,8 @@ type Selection struct {
 	used    bool
 }
 
+// Select reserves an SBO object and returns a single-use Selection. Complete it with Operate
+// or Cancel before the IED selection timeout.
 func (o *Control) Select(ctx context.Context, value data.Value, options ControlOptions) (*Selection, error) {
 	if o.model != SBONormal && o.model != SBOEnhanced {
 		return nil, fmt.Errorf("%w: control has no selection model", ErrRejected)
@@ -320,6 +342,9 @@ func (o *Control) Select(ctx context.Context, value data.Value, options ControlO
 	}
 	return &Selection{control: o, command: command, number: c.next}, nil
 }
+
+// Operate performs the modeled control procedure. Inspect ControlResult even when err is
+// non-nil: acceptance, termination and equipment feedback are separate evidence.
 func (s *Selection) Operate(ctx context.Context) (ControlResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -335,6 +360,9 @@ func (s *Selection) Operate(ctx context.Context) (ControlResult, error) {
 	s.used = true
 	return s.control.execute(ctx, s.command, s.number, result)
 }
+
+// Cancel releases this selection on the remote IED. A successful cancellation consumes the
+// local Selection.
 func (s *Selection) Cancel(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

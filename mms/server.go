@@ -47,6 +47,8 @@ type Association struct {
 	concluded     bool
 }
 
+// NewServer validates configuration and creates a server around a concurrency-safe Store.
+// Serve or ListenAndServe starts accepting associations.
 func NewServer(store Store, cfg Config) (*Server, error) {
 	if store == nil {
 		return nil, fmt.Errorf("mms: nil Store")
@@ -55,8 +57,11 @@ func NewServer(store Store, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{Store: store, cfg: cfg, Identity: Identity{"Go MMS", "Native Go MMS", "1.3.0"}, raw: make(map[net.Conn]struct{}), lists: make(map[ObjectName]NamedList)}, nil
+	return &Server{Store: store, cfg: cfg, Identity: Identity{"Go MMS", "Native Go MMS", "1.4.0"}, raw: make(map[net.Conn]struct{}), lists: make(map[ObjectName]NamedList)}, nil
 }
+
+// Serve accepts associations on listener until shutdown. The server owns and closes listener;
+// configure callbacks before calling Serve.
 func (s *Server) Serve(listener net.Listener) error {
 	s.mu.Lock()
 	if s.closed || s.listener != nil {
@@ -95,6 +100,8 @@ func (s *Server) Serve(listener net.Listener) error {
 		go s.serveConnection(raw)
 	}
 }
+
+// ListenAndServe creates a TCP listener at host:port and delegates its lifetime to Serve.
 func (s *Server) ListenAndServe(address string) error {
 	l, err := net.Listen("tcp", address)
 	if err != nil {
@@ -103,6 +110,9 @@ func (s *Server) ListenAndServe(address string) error {
 	defer l.Close()
 	return s.Serve(l)
 }
+
+// Close releases owned transports and workers. Defer it immediately after successful
+// construction.
 func (s *Server) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -134,7 +144,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
-func (a *Association) Parameters() Parameters   { return a.params }
+
+// Parameters returns the negotiated association limits and supported service bits.
+func (a *Association) Parameters() Parameters { return a.params }
+
+// Context returns the association lifetime context used by owned services and post-response
+// callbacks.
 func (a *Association) Context() context.Context { return a.ctx }
 
 // Close aborts an association whose background service cannot continue.
@@ -392,13 +407,14 @@ func (a *Association) dispatch(m envelope, actions *responseActions) []byte {
 		if err != nil {
 			return fail(err)
 		}
-		results := make([]ReadResult, len(accesses))
-		for i, access := range accesses {
-			v, err := a.server.Store.Read(ctx, access)
-			if err == nil && depth(v) > a.params.NestingLevel {
-				err = TypeUnsupported
+		results := ReadBatch(ctx, a.server.Store, accesses)
+		if len(results) != len(accesses) {
+			return fail(ErrProtocol)
+		}
+		for i := range results {
+			if results[i].Error == nil && depth(results[i].Value) > a.params.NestingLevel {
+				results[i].Error = TypeUnsupported
 			}
-			results[i] = ReadResult{v, err}
 		}
 		data, err := encodeResults(results)
 		if err != nil {

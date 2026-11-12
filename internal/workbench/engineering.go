@@ -63,14 +63,25 @@ func (m *Manager) SubscribeRemote(ctx context.Context, id, domain, item string, 
 				continue
 			}
 			report := event.Report
-			m.log.add("report.received", id, fmt.Sprintf("%s · %d members · entryID=%s · historyGap=%t", report.ID, len(report.Entries), hex.EncodeToString(report.EntryID), report.Reset))
-			for _, entry := range report.Entries {
-				m.log.add("report.value", id, fmt.Sprintf("%s = %s · reason=%s", entry.Variable.Name, entry.Value, entry.Reason))
+			source := "report"
+			if strings.Contains(item, "$BR$") {
+				source = "buffered-report"
 			}
+			if err := c.appendRecord(name, source, report); err != nil {
+				m.log.add("report.error", id, err.Error())
+				continue
+			}
+			m.log.add("report.received", id, fmt.Sprintf("%s · %d members · entryID=%s · historyGap=%t", report.ID, len(report.Entries), hex.EncodeToString(report.EntryID), report.Reset))
 		}
 		if err := subscription.Err(); err != nil {
 			m.log.add("report.error", id, err.Error())
 		}
+		c.mu.Lock()
+		if c.subscriptions[name] == subscription {
+			delete(c.subscriptions, name)
+		}
+		c.mu.Unlock()
+		subscription.Close()
 	}()
 	return nil
 }

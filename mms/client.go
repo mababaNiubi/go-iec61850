@@ -17,6 +17,9 @@ type callResult struct {
 	service ber.Element
 	err     error
 }
+
+// ReadResult contains one ordered member result. A successful request can still contain
+// member-level Error values.
 type ReadResult struct {
 	Value Value
 	Error error
@@ -47,8 +50,9 @@ type Client struct {
 	reports      chan InformationReport
 }
 
-// Dial 建立到 address（host:port）的 ISO/MMS 关联。ctx 控制本次建连与协商；
-// 后续读写使用各自的 context，应用仍需 Conclude 或 Close 释放 Client。
+// Dial establishes an ISO/MMS association at address (host:port). ctx bounds setup and
+// negotiation; later requests use their own contexts. Defer Close on success, or Conclude
+// gracefully after pending requests finish.
 func Dial(ctx context.Context, address string, cfg Config) (*Client, error) {
 	cfg, err := cfg.normalized()
 	if err != nil {
@@ -70,10 +74,21 @@ func Dial(ctx context.Context, address string, cfg Config) (*Client, error) {
 	go c.receive()
 	return c, nil
 }
-func (c *Client) Parameters() Parameters            { return c.params }
+
+// Parameters returns the negotiated association limits and supported service bits.
+func (c *Client) Parameters() Parameters { return c.params }
+
+// Reports returns the bounded raw unsolicited-report stream. Use one consumer; an ied.Client
+// wrapper owns this channel after Wrap.
 func (c *Client) Reports() <-chan InformationReport { return c.reports }
-func (c *Client) Done() <-chan struct{}             { return c.done }
-func (c *Client) Err() error                        { c.mu.Lock(); defer c.mu.Unlock(); return c.err }
+
+// Done closes when the owned connection or runtime has stopped. It carries no values; use Err
+// to inspect failure.
+func (c *Client) Done() <-chan struct{} { return c.done }
+
+// Err returns the terminal failure, or nil while no failure has been recorded. It is safe to
+// call concurrently.
+func (c *Client) Err() error { c.mu.Lock(); defer c.mu.Unlock(); return c.err }
 func (c *Client) shutdown(err error) {
 	c.mu.Lock()
 	if c.err != nil {
@@ -92,6 +107,9 @@ func (c *Client) shutdown(err error) {
 	c.mu.Unlock()
 	c.conn.Close()
 }
+
+// Close releases owned transports and workers. Defer it immediately after successful
+// construction.
 func (c *Client) Close() error { c.shutdown(ErrClosed); return nil }
 
 func sendPDU(ctx context.Context, conn *iso.Conn, token chan struct{}, data []byte) error {
@@ -300,6 +318,8 @@ func (c *Client) Conclude(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
+
+// Identify reads the peer vendor, model and revision strings within ctx.
 func (c *Client) Identify(ctx context.Context) (Identity, error) {
 	e, err := c.call(ctx, ber.Encode(0x82), 0xa2)
 	if err != nil {
@@ -311,6 +331,8 @@ func (c *Client) Identify(ctx context.Context) (Identity, error) {
 	}
 	return Identity{string(f[0].Bytes), string(f[1].Bytes), string(f[2].Bytes)}, nil
 }
+
+// Status reads the peer's logical and physical MMS status within ctx.
 func (c *Client) Status(ctx context.Context) (Status, error) {
 	e, err := c.call(ctx, ber.Encode(0x80, []byte{0}), 0xa0)
 	if err != nil {
@@ -328,11 +350,14 @@ func (c *Client) Status(ctx context.Context) (Status, error) {
 	return Status{int(l), int(p)}, err
 }
 
+// NamePage is one GetNameList response. Continue from its last name while MoreFollows is true.
 type NamePage struct {
 	Names       []string
 	MoreFollows bool
 }
 
+// GetNameList requests one bounded directory page. after is empty for the first page;
+// scope/domain must identify the requested namespace.
 func (c *Client) GetNameList(ctx context.Context, class ObjectClass, scope Scope, domain, after string) (NamePage, error) {
 	if scope > AssociationScope || (scope == DomainScope && !validIdentifier(domain)) || (scope != DomainScope && domain != "") || (after != "" && !validIdentifier(after)) {
 		return NamePage{}, ErrProtocol
@@ -373,8 +398,8 @@ func (c *Client) GetNameList(ctx context.Context, class ObjectClass, scope Scope
 	return page, nil
 }
 
-// Names 自动获取并拼接目录分页。查 Domain 用 DomainObject/VMDScope/空domain；
-// 查域内变量用 NamedVariable/DomainScope/实际domain。
+// Names follows directory pages in order. Use DomainObject/VMDScope/empty domain for
+// domains, or NamedVariable/DomainScope/the actual domain for variable names.
 func (c *Client) Names(ctx context.Context, class ObjectClass, scope Scope, domain string) ([]string, error) {
 	var out []string
 	after := ""
@@ -399,8 +424,8 @@ func (c *Client) Names(ctx context.Context, class ObjectClass, scope Scope, doma
 	}
 }
 
-// GetVariableAccessAttributes 查询设备声明的类型、宽度、长度和结构成员，
-// 便于读取前选择访问器，或用 ValidateValue 校验准备写入的值。
+// GetVariableAccessAttributes reads the remote declared type, widths, lengths and ordered
+// structure members. It does not read a current value.
 func (c *Client) GetVariableAccessAttributes(ctx context.Context, n ObjectName) (TypeSpec, error) {
 	if err := n.validate(); err != nil {
 		return TypeSpec{}, err
@@ -481,8 +506,8 @@ func (c *Client) read(ctx context.Context, spec []byte, expected int) ([]ReadRes
 	return r, err
 }
 
-// ReadMultiple 按 accesses 顺序批量读取。返回的 error 针对整个请求；
-// err 为 nil 时仍须逐项检查 ReadResult.Error，成功项再读取 Value。
+// ReadMultiple reads accesses in order. The outer error describes request failure; even
+// when it is nil, inspect every ReadResult.Error before using Value.
 func (c *Client) ReadMultiple(ctx context.Context, accesses ...VariableAccess) ([]ReadResult, error) {
 	spec, err := encodeAccesses(accesses)
 	if err != nil {
@@ -491,7 +516,8 @@ func (c *Client) ReadMultiple(ctx context.Context, accesses ...VariableAccess) (
 	return c.read(ctx, spec, len(accesses))
 }
 
-// ReadAccess 读取一个带选择的变量，配合 Element（0起始数组下标）或 Member 使用。
+// ReadAccess reads a variable with alternate access. Element uses a zero-based array index;
+// Member selects a declared structure component.
 func (c *Client) ReadAccess(ctx context.Context, access VariableAccess) (Value, error) {
 	r, err := c.ReadMultiple(ctx, access)
 	if err != nil {
@@ -500,8 +526,9 @@ func (c *Client) ReadAccess(ctx context.Context, access VariableAccess) (Value, 
 	return r[0].Value, r[0].Error
 }
 
-// Read 读取 n 标识的完整变量。返回值需通过 Int、Bool、Float 等访问器转换；
-// n 的 Domain/Item 是对端对象标识，不是打印形式的 "domain/item" 单字符串。
+// Read reads the complete object named by n. Convert its immutable Value with checked Int,
+// Bool, Float or other accessors. Domain and Item are separate identifiers, not a single
+// printed domain/item string.
 func (c *Client) Read(ctx context.Context, n ObjectName) (Value, error) {
 	return c.ReadAccess(ctx, Access(n))
 }
@@ -545,8 +572,9 @@ func (c *Client) write(ctx context.Context, spec []byte, values []Value) ([]erro
 	return out, nil
 }
 
-// WriteMultiple 的 accesses 与 values 必须等长且顺序对应。外层 error 为请求失败，
-// 返回切片的每个 error 为该项的结果；部分成功不会自动回滚。
+// WriteMultiple requires equally sized ordered accesses and values. The outer error
+// describes request failure and each returned error describes one member. Partial success
+// is not rolled back.
 func (c *Client) WriteMultiple(ctx context.Context, accesses []VariableAccess, values []Value) ([]error, error) {
 	if len(accesses) != len(values) {
 		return nil, fmt.Errorf("mms: values/accesses count mismatch")
@@ -558,7 +586,8 @@ func (c *Client) WriteMultiple(ctx context.Context, accesses []VariableAccess, v
 	return c.write(ctx, spec, values)
 }
 
-// WriteAccess 写入指定数组元素或结构成员；访问选择与 ReadAccess 相同。
+// WriteAccess assigns one selected array element or structure component using the same
+// alternate-access rules as ReadAccess.
 func (c *Client) WriteAccess(ctx context.Context, a VariableAccess, v Value) error {
 	r, err := c.WriteMultiple(ctx, []VariableAccess{a}, []Value{v})
 	if err != nil {
@@ -567,8 +596,9 @@ func (c *Client) WriteAccess(ctx context.Context, a VariableAccess, v Value) err
 	return r[0]
 }
 
-// Write 写入一个变量。用 Integer、Boolean 等构造带类型的值；
-// 是否可写以及目标类型是否匹配由对端校验，调用方必须检查返回错误。
+// Write assigns one complete variable using a typed value. The peer checks permission and
+// declaration compatibility. A timeout after submission does not prove that the assignment
+// was rejected.
 func (c *Client) Write(ctx context.Context, n ObjectName, v Value) error {
 	return c.WriteAccess(ctx, Access(n), v)
 }

@@ -180,12 +180,16 @@ const (
 	BadPosition
 )
 
+// MMSValue encodes a valid Position as the two-bit MSB-first Dbpos value.
 func (p Position) MMSValue() (mms.Value, error) {
 	if p > BadPosition {
 		return mms.Value{}, fmt.Errorf("scl: invalid Dbpos %d", p)
 	}
 	return mms.BitString([]byte{byte(p) << 6}, 2)
 }
+
+// ReadPosition decodes exactly two MMS bits into an IEC double-point position; other kinds
+// or lengths return an error.
 func ReadPosition(v mms.Value) (Position, error) {
 	n, err := v.BitLength()
 	if err != nil || n != 2 {
@@ -197,6 +201,8 @@ func ReadPosition(v mms.Value) (Position, error) {
 	}
 	return Position(b[0] >> 6), nil
 }
+
+// String returns the readable position label, or unknown for an invalid value.
 func (p Position) String() string {
 	switch p {
 	case Intermediate:

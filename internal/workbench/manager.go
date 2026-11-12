@@ -250,12 +250,7 @@ func (m *Manager) Detail(ctx context.Context, id string) (Detail, error) {
 	m.mu.RLock()
 	doc := m.docs[d.docID]
 	m.mu.RUnlock()
-	for _, ap := range doc.AccessPoints {
-		inputs, e := doc.system.GOOSEInputs(ap.IED, ap.AP)
-		if e == nil {
-			out.Inputs = append(out.Inputs, inputs...)
-		}
-	}
+	out.Inputs, _ = doc.system.Inputs(d.name, d.ap)
 	for _, p := range d.points {
 		t, e := d.ied.Type(ctx, p.Name)
 		if e != nil {

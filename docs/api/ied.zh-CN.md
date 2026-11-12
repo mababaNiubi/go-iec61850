@@ -2,7 +2,7 @@
 
 [English](ied.md) | 简体中文
 
-`ied` 提供 IEC 61850 控制和 URCB 报告语义；已有 `mms` API 继续用于底层 MMS 服务。`simulator` 让其他 Go 程序在进程内运行 SCL 设备，不依赖 IEDLab 或 HTTP 服务。这些公开接口从 v1.2.0 引入。
+`ied` 提供控制、URCB/BRCB、在线发现、当前数据集读取和定值组操作；`mms` 提供底层服务。`simulator` 在进程内运行 SCL 设备或软件站点，不依赖 IEDLab。先看 [API 任务索引与调用约定](README.zh-CN.md)，再按[工程场景](engineering.zh-CN.md)接入报告、历史和整站逻辑。
 
 ## 连接、读取、控制
 
@@ -110,7 +110,7 @@ if err != nil { return err }
 model, err := system.Device("BayIED", "S1")
 if err != nil { return err }
 
-// 在这里注册 model.OnOperate 回调，并设置初始采集值。
+// 在这里注册 model.OnControl 回调，并设置初始采集值。
 runtime, err := simulator.Start(ctx, model, simulator.Options{
     Listen: "127.0.0.1:8102",
     GOOSE: simulator.GOOSEMemory,
@@ -120,7 +120,7 @@ defer runtime.Close()
 return runtime.Wait(ctx)
 ```
 
-Start 管理 TCP 监听、连接、帧链路和后台协议任务；端口填 0 时用 `Address()` 取得实际地址。父 ctx 取消或 `Stop(ctx)` 会停止传输，模型仍可更新并重新启动。采集使用 `model.Update`，执行使用 `model.OnOperate` 接自己的驱动。当前建模服务端支持普通直接 SPC/DPC 回调；客户端支持四种控制模型，不代表模拟服务端自动支持全部模型。
+Start 管理 TCP 监听、连接、帧链路和后台协议任务；端口填 0 时用 `Address()` 取得实际地址。父 ctx 取消或 `Stop(ctx)` 会停止传输，模型仍可更新并重新启动。采集使用 `model.Update`，执行使用 `model.OnControl` 接驱动。建模服务端按 ctlModel 支持六字段 SPC/DPC 的选择和增强终结；`OnOperate` 保留普通直接接口。客户端可根据在线声明操作远端设备的其他控制类型。详见[模型变化与控制终结](engineering.zh-CN.md#定值变化数组和控制终结)。
 
 Memory 模式实际编码、发布并接收 GOOSE 帧。Ethernet 模式指定 Interface 并使用实际网卡 MAC。Observe 是并发事件回调，应快速返回，关闭操作放在回调外。Store 装饰器可记录 MMS 访问。MemoryBus 连接独立运行时，Options.SV 可在共享总线上启动软件采样源。参见[完整站点示例](../../examples/scd/station/README.zh-CN.md)。
 

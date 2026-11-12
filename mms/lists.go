@@ -8,11 +8,15 @@ import (
 	"github.com/mababaNiubi/go-iec61850/internal/ber"
 )
 
+// NamedList retains an ordered list of variable accesses, including selections.
+// Deletable controls whether a remote client may delete the server declaration.
 type NamedList struct {
 	Name      ObjectName
 	Variables []VariableAccess
 	Deletable bool
 }
+
+// DeleteResult reports how many named lists matched and were actually deleted.
 type DeleteResult struct{ Matched, Deleted uint32 }
 
 func selectedType(t TypeSpec, selection Selection) (TypeSpec, error) {
@@ -295,8 +299,9 @@ func (a *Association) listService(ctx context.Context, id uint32, e ber.Element)
 	return reject(id, 1, 1)
 }
 
-// DefineNamedList 定义按顺序访问多个变量的 MMS 命名表。AssociationName 创建
-// 仅当前关联可见的 AA 表；这不配置 IEC 61850 SCL 数据集或报告控制块。
+// DefineNamedList creates an ordered MMS variable list. AssociationName makes an
+// association-private list removed on disconnect. This does not configure an SCL dataset or
+// report block.
 func (c *Client) DefineNamedList(ctx context.Context, n ObjectName, variables []VariableAccess) error {
 	if err := n.validate(); err != nil {
 		return err
@@ -315,7 +320,7 @@ func (c *Client) DefineNamedList(ctx context.Context, n ObjectName, variables []
 	return nil
 }
 
-// GetNamedListAttributes 返回列表成员顺序和能否删除的声明。
+// GetNamedListAttributes reads ordered member accesses and the remote deletion permission.
 func (c *Client) GetNamedListAttributes(ctx context.Context, n ObjectName) (NamedList, error) {
 	if err := n.validate(); err != nil {
 		return NamedList{}, err
@@ -333,7 +338,7 @@ func (c *Client) GetNamedListAttributes(ctx context.Context, n ObjectName) (Name
 	return NamedList{n, vars, f[0].Bytes[0] != 0}, err
 }
 
-// DeleteNamedList 请求删除一个命名表，返回匹配数与实际删除数。
+// DeleteNamedList requests deletion and returns separate matched and actually deleted counts.
 func (c *Client) DeleteNamedList(ctx context.Context, n ObjectName) (DeleteResult, error) {
 	if err := n.validate(); err != nil {
 		return DeleteResult{}, err
@@ -357,7 +362,8 @@ func (c *Client) DeleteNamedList(ctx context.Context, n ObjectName) (DeleteResul
 	return DeleteResult{matched, deleted}, err
 }
 
-// ReadNamedList 按已定义的成员顺序读取；除外层 error，还要检查每项 Error。
+// ReadNamedList reads members in declared order. Check both the request error and each
+// ReadResult.Error.
 func (c *Client) ReadNamedList(ctx context.Context, n ObjectName) ([]ReadResult, error) {
 	if err := n.validate(); err != nil {
 		return nil, err
@@ -365,7 +371,8 @@ func (c *Client) ReadNamedList(ctx context.Context, n ObjectName) ([]ReadResult,
 	return c.read(ctx, ber.Encode(0xa1, encodeName(n)), -1)
 }
 
-// WriteNamedList 的 values 按列表成员顺序提供，结果也须逐项检查；不是原子事务。
+// WriteNamedList assigns values in declared member order. Check per-member errors as well
+// as the request error; this is not an atomic transaction.
 func (c *Client) WriteNamedList(ctx context.Context, n ObjectName, values []Value) ([]error, error) {
 	if err := n.validate(); err != nil {
 		return nil, err
@@ -404,6 +411,9 @@ func decodeReport(e ber.Element) (InformationReport, error) {
 	}
 	return r, err
 }
+
+// SendReport transmits one raw MMS InformationReport on this association. It checks the
+// negotiated PDU size and bounds the send by ctx and RequestTimeout.
 func (a *Association) SendReport(ctx context.Context, r InformationReport) error {
 	data, err := a.encodeReport(r)
 	if err != nil {

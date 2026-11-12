@@ -12,9 +12,38 @@ import (
 	"github.com/mababaNiubi/go-iec61850/mms"
 )
 
+// SettingGroups describes the number of groups, active group and currently edited group.
+// Editing is zero when no group is reserved.
 type SettingGroups struct{ Count, Active, Editing uint32 }
+
+// SettingResult preserves confirmation and activation evidence separately when a later step
+// fails.
 type SettingResult struct{ Committed, Activated bool }
 
+// ActivateSettings switches domain/LLN0.SGCB to an existing group numbered
+// 1..NumOfSG without editing values. A timeout can leave the remote activation
+// outcome uncertain; read SettingGroups before deciding whether to retry.
+func (c *Client) ActivateSettings(ctx context.Context, domain string, group uint32) error {
+	if err := c.acquire(ctx, c.settingToken); err != nil {
+		return err
+	}
+	defer func() { <-c.settingToken }()
+	state, err := c.SettingGroups(ctx, domain)
+	if err != nil {
+		return err
+	}
+	if group < 1 || group > state.Count {
+		return fmt.Errorf("ied: setting group outside 1..%d", state.Count)
+	}
+	name, err := ObjectName(domain, "SP", "LLN0.SGCB.ActSG")
+	if err != nil {
+		return err
+	}
+	return c.Write(ctx, name, data.Unsigned(uint64(group)))
+}
+
+// SettingGroups reads NumOfSG, ActSG and EditSG from domain/LLN0.SGCB.
+// ctx bounds the requests; Editing is zero when no group is reserved.
 func (c *Client) SettingGroups(ctx context.Context, domain string) (SettingGroups, error) {
 	var out SettingGroups
 	for _, field := range []struct {

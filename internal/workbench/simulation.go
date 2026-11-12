@@ -256,6 +256,17 @@ type observedStore struct {
 	id  string
 }
 
+func (s *observedStore) ReadBatch(ctx context.Context, accesses []mms.VariableAccess) []mms.ReadResult {
+	results := mms.ReadBatch(ctx, s.Store, accesses)
+	for i, result := range results {
+		if i >= len(accesses) {
+			break
+		}
+		s.log.add("mms.read", s.id, fmt.Sprintf("%s = %s · %v", accesses[i].Name, result.Value, result.Error))
+	}
+	return results
+}
+
 func (s *observedStore) Read(ctx context.Context, a mms.VariableAccess) (mms.Value, error) {
 	v, err := s.Store.Read(ctx, a)
 	message := fmt.Sprintf("%s = %s", a.Name, v)

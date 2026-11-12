@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Package simulator runs an SCL-backed device without depending on a CLI, HTTP
-// server or gateway application. Bind hardware/virtual actuators with the
-// existing scl.IED.OnOperate and commit acquisitions with scl.IED.Update.
+// server or gateway application. Bind hardware/virtual actuators with
+// scl.IED.OnControl (or OnOperate for direct normal controls) and commit
+// independent acquisitions with scl.IED.Update. Start runs one device;
+// StartStation resolves a multi-IED SCL project onto isolated software buses.
+//
+// Runtime and Station own their transports and workers. Cancel their parent
+// context and call Close from the owner to join workers. Receive callbacks
+// execute synchronously; return promptly and never call Close inside them.
 package simulator
 
 import (
@@ -17,6 +23,7 @@ import (
 	"github.com/mababaNiubi/go-iec61850/scl"
 )
 
+// GOOSEMode selects off, in-memory or physical Ethernet GOOSE transport.
 type GOOSEMode string
 
 const (
@@ -25,11 +32,15 @@ const (
 	GOOSEEthernet GOOSEMode = "ethernet"
 )
 
+// Event reports a runtime stream event or failure to the optional Observe callback.
 type Event struct {
 	Kind, Stream string
 	GOOSE        *goose.Event
 	Err          error
 }
+
+// Options configures owned MMS and Ethernet transports. Bind application controls on the model
+// before Start.
 type Options struct {
 	Listen      string // empty uses 127.0.0.1:8102; port zero requests a free port
 	MMS         mms.Config
@@ -60,6 +71,8 @@ type Runtime struct {
 	observe func(Event)
 }
 
+// Start constructs transports and starts protocol workers for one model. ctx owns runtime
+// lifetime; defer Close after success. Setup failure releases acquired resources.
 func Start(ctx context.Context, model *scl.IED, options Options) (*Runtime, error) {
 	if ctx == nil || model == nil {
 		return nil, fmt.Errorf("simulator: model and context are required")
@@ -233,11 +246,27 @@ func (r *Runtime) worker(task func() error) {
 		}
 	}()
 }
-func (r *Runtime) Address() string       { return r.address }
-func (r *Runtime) GOOSEMode() GOOSEMode  { return r.mode }
-func (r *Runtime) Model() *scl.IED       { return r.model }
+
+// Address returns the actual MMS listen address, including the allocated port when Listen used
+// port zero.
+func (r *Runtime) Address() string { return r.address }
+
+// GOOSEMode returns the configured transport mode.
+func (r *Runtime) GOOSEMode() GOOSEMode { return r.mode }
+
+// Model returns the application-owned SCL model used by this runtime.
+func (r *Runtime) Model() *scl.IED { return r.model }
+
+// Done closes when the owned connection or runtime has stopped. It carries no values; use Err
+// to inspect failure.
 func (r *Runtime) Done() <-chan struct{} { return r.done }
-func (r *Runtime) Err() error            { r.mu.Lock(); defer r.mu.Unlock(); return r.err }
+
+// Err returns the terminal failure, or nil while no failure has been recorded. It is safe to
+// call concurrently.
+func (r *Runtime) Err() error { r.mu.Lock(); defer r.mu.Unlock(); return r.err }
+
+// Wait waits for runtime completion or ctx cancellation. Cancelling ctx only
+// stops this wait; use Stop to also cancel the runtime's transport work.
 func (r *Runtime) Wait(ctx context.Context) error {
 	select {
 	case <-r.done:
@@ -246,7 +275,13 @@ func (r *Runtime) Wait(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
+
+// Stop cancels transport work and waits within ctx. The model remains available to restart in
+// another runtime.
 func (r *Runtime) Stop(ctx context.Context) error { r.cancel(); return r.Wait(ctx) }
+
+// Close cancels transport work and waits up to five seconds for workers. Defer
+// it after successful Start; inspect its error if cleanup completion matters.
 func (r *Runtime) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

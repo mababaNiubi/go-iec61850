@@ -15,15 +15,26 @@ type stationRun struct {
 	devices []*device
 }
 type StationInput struct {
-	Receiver   string    `json:"receiver"`
-	AP         string    `json:"ap"`
-	Address    string    `json:"input"`
-	Service    string    `json:"service"`
-	Source     string    `json:"source"`
-	Value      string    `json:"value"`
-	ReceivedAt time.Time `json:"received_at"`
-	Counter    uint16    `json:"counter"`
-	Error      string    `json:"error,omitempty"`
+	Receiver       string    `json:"receiver"`
+	AP             string    `json:"ap"`
+	Address        string    `json:"input"`
+	Service        string    `json:"service"`
+	Source         string    `json:"source"`
+	Value          string    `json:"value"`
+	ReceivedAt     time.Time `json:"received_at"`
+	Counter        uint16    `json:"counter"`
+	Error          string    `json:"error,omitempty"`
+	Reference      string    `json:"reference"`
+	Network        string    `json:"network"`
+	State          string    `json:"state"`
+	Valid          bool      `json:"valid"`
+	Quality        uint32    `json:"quality"`
+	HasQuality     bool      `json:"has_quality"`
+	ValidUntil     time.Time `json:"valid_until"`
+	LastGoodAt     time.Time `json:"last_good_at"`
+	SampleSync     uint8     `json:"sample_sync"`
+	StateNumber    uint32    `json:"state_number"`
+	SequenceNumber uint32    `json:"sequence_number"`
 }
 type StationSummary struct {
 	Model   string          `json:"model"`
@@ -180,7 +191,7 @@ func (m *Manager) stationSummary(id string, s *stationRun) StationSummary {
 		out.Devices = append(out.Devices, d.summary())
 	}
 	for _, input := range s.runtime.Inputs() {
-		out.Inputs = append(out.Inputs, StationInput{input.Receiver, input.AP, input.Address, input.Service, input.Source, input.Value.String(), input.ReceivedAt, input.Counter, input.Error})
+		out.Inputs = append(out.Inputs, StationInput{Receiver: input.Receiver, AP: input.AP, Address: input.Address, Service: input.Service, Source: input.Source, Value: input.Value.String(), ReceivedAt: input.ReceivedAt, Counter: input.Counter, Error: input.Error, Reference: input.Reference, Network: input.Network, State: input.State, Valid: input.Valid, Quality: uint32(input.Quality), HasQuality: input.HasQuality, ValidUntil: input.ValidUntil, LastGoodAt: input.LastGoodAt, SampleSync: input.SampleSync, StateNumber: input.StateNumber, SequenceNumber: input.SequenceNumber})
 	}
 	return out
 }

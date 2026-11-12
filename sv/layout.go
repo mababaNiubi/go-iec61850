@@ -19,10 +19,15 @@ type Field struct {
 	Path, Basic   string
 	Offset, Width int
 }
+
+// Member retains one ordered FCDA and its scalar field layout.
 type Member struct {
 	Name, Domain string
 	Fields       []Field
 }
+
+// Layout describes contiguous seqData fields in dataset order. Size and all field
+// offsets/widths are byte counts.
 type Layout struct {
 	Members []Member
 	Size    int
@@ -32,6 +37,8 @@ var basicWidths = map[string]int{"BOOLEAN": 1, "INT8": 1, "INT16": 2, "INT24": 3
 	"INT8U": 1, "INT16U": 2, "INT24U": 3, "INT32U": 4, "INT64U": 8, "FLOAT32": 4, "FLOAT64": 8,
 	"Enum": 4, "Dbpos": 4, "Quality": 4, "Check": 4, "Timestamp": 8}
 
+// BasicWidth returns the SV byte width for a supported SCL basic type. Unsupported types
+// return an error; MMS type width is not a substitute.
 func BasicWidth(basic string) (int, error) {
 	width := basicWidths[basic]
 	if width == 0 {
@@ -39,6 +46,9 @@ func BasicWidth(basic string) (int, error) {
 	}
 	return width, nil
 }
+
+// Validate checks nonempty members, unique field paths, contiguous offsets, supported
+// widths and the total seqData byte size.
 func (l Layout) Validate() error {
 	if len(l.Members) == 0 || l.Size < 1 || l.Size > MaxAPDUSize {
 		return fmt.Errorf("sv: invalid dataset layout size")
@@ -135,9 +145,14 @@ func (l Layout) QualityFor(field Field) (*Field, error) {
 	}
 	return nil, nil
 }
+
+// Compatible reports exact ordered layout equality, including member/domain names, fields
+// and byte size.
 func (l Layout) Compatible(other Layout) bool {
 	return l.Size == other.Size && reflect.DeepEqual(l.Members, other.Members)
 }
+
+// Clone returns an independent copy of the members and field slices.
 func (l Layout) Clone() Layout {
 	members := make([]Member, len(l.Members))
 	for i, m := range l.Members {

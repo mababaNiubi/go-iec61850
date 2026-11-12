@@ -1,6 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package mms implements a native Go MMS client and server over RFC 1006.
+// Package mms implements native Go MMS clients and servers over RFC 1006.
+// Dial opens an association; defer Client.Close on success and supply a context
+// to each confirmed request. Config zero values select bounded defaults.
+//
+// ObjectName identifies VMD-, domain- or association-scoped objects. Values
+// alias data.Value, which is immutable and provides checked typed accessors.
+// ReadMultiple preserves access order and per-member errors separately from
+// the overall request error.
+//
+// NewServer serves a concurrency-safe Store. Model provides an in-memory Store
+// with atomic SetValues acquisitions. Optional BatchReader implementations can
+// provide coherent multi-member reads. Use package ied for IEC control, RCB
+// reports, discovery and settings; raw InformationReport is an MMS service.
 package mms
 
 import (
@@ -16,11 +28,11 @@ type ISOConfig = iso.Config
 // Config contains local limits. Zero values select conservative defaults.
 type Config struct {
 	ISO                   ISOConfig
-	MaxPDUSize            int
-	MaxOutstandingCalling int
-	MaxOutstandingCalled  int
-	NestingLevel          int
-	RequestTimeout        time.Duration
+	MaxPDUSize            int           // bytes; zero selects 65000; range 128..16 MiB
+	MaxOutstandingCalling int           // zero selects 5; range 1..1024
+	MaxOutstandingCalled  int           // zero selects 5; range 1..1024
+	NestingLevel          int           // zero selects 16; range 1..64
+	RequestTimeout        time.Duration // per confirmed request; zero selects 5s; negative is invalid
 }
 
 func (c Config) normalized() (Config, error) {
@@ -61,5 +73,8 @@ func (p Parameters) Supports(service int) bool {
 	return service >= 0 && service < 85 && p.Services[service/8]&(0x80>>uint(service%8)) != 0
 }
 
+// Identity is the vendor, model and revision returned by MMS Identify.
 type Identity struct{ Vendor, Model, Revision string }
+
+// Status holds the logical and physical status codes returned by MMS Status.
 type Status struct{ Logical, Physical int }

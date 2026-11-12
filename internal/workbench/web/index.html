@@ -193,6 +193,12 @@
               >Browse a simulator or connect to an existing IED.</span
             >
           </form>
+          <div class="service-toolbar">
+            <label for="service-connection" data-i18n="serviceConnection">Connection</label>
+            <select id="service-connection"></select>
+            <button id="service-discover" class="button secondary" data-i18n="discoverServices">Discover services</button>
+            <span id="service-status" aria-live="polite"></span>
+          </div>
           <div class="remote-layout">
             <aside id="remote-tree" class="remote-tree">
               <p>Connections will appear here.</p>
@@ -203,6 +209,8 @@
               <div id="remote-value"></div>
             </div>
           </div>
+          <div id="online-services"></div>
+          <section id="report-history" class="stream-content"></section>
         </section>
         <section class="event-panel">
           <div class="event-heading">

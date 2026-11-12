@@ -13,18 +13,25 @@ import (
 	"github.com/mababaNiubi/go-iec61850/mms"
 )
 
+// ErrReportOverflow means the application did not drain its bounded report
+// queue in time. Re-establish a subscription and reconcile any missing history.
 var ErrReportOverflow = errors.New("ied: report consumer buffer overflow")
 
 // ErrSegmentPending means Decode has retained a validated incomplete report.
 // Subscriptions consume this internally and only deliver complete reports.
 var ErrSegmentPending = errors.New("ied: waiting for remaining report segments")
 
+// ReportEntry is one included dataset member. Variable retains alternate access; Type is the
+// selected declaration and Reason may be absent.
 type ReportEntry struct {
 	Variable mms.VariableAccess
 	Value    data.Value
 	Reason   data.Value    // invalid zero value when reason-for-inclusion is absent
 	Type     data.TypeSpec // selected online declaration, when provided
 }
+
+// Report is a complete, validated and reassembled report. ReceivedAt is local reception time;
+// TimeOfEntry and member timestamps belong to the source.
 type Report struct {
 	ID, DataSet    string
 	ConfRev        uint32
@@ -38,10 +45,16 @@ type Report struct {
 	Reset          bool       // sequence discontinuity: discard prior cached members first
 	Entries        []ReportEntry
 }
+
+// ReportEvent delivers either one complete report or a decoding error. An error requires
+// invalidating dependent cached values.
 type ReportEvent struct {
 	Report Report
 	Err    error
 }
+
+// ReportConfig pins a decoder to one report ID, dataset, revision and ordered member/type
+// list.
 type ReportConfig struct {
 	ID, DataSet string
 	ConfRev     uint32
@@ -63,6 +76,8 @@ type ReportDecoder struct {
 	segmentMask []bool
 }
 
+// NewReportDecoder validates and defensively copies the expected dataset declaration.
+// Serialize calls to its Decode method.
 func NewReportDecoder(config ReportConfig) (*ReportDecoder, error) {
 	if config.ID == "" || config.DataSet == "" || len(config.Members) == 0 || len(config.Members) > 4096 {
 		return nil, fmt.Errorf("ied: invalid URCB report configuration")
@@ -85,6 +100,9 @@ func NewReportDecoder(config ReportConfig) (*ReportDecoder, error) {
 	return &ReportDecoder{config: config, sequence: -1}, nil
 }
 func reportBit(raw []byte, index int) bool { return raw[index/8]&(0x80>>uint(index%8)) != 0 }
+
+// Decode validates a whole report and reassembles segments. ErrSegmentPending means no
+// complete report is available yet; other errors invalidate decoder continuity.
 func (d *ReportDecoder) Decode(raw mms.InformationReport) (report Report, err error) {
 	defer func() {
 		if err != nil && !errors.Is(err, ErrSegmentPending) {
@@ -307,6 +325,8 @@ func (d *ReportDecoder) Decode(raw mms.InformationReport) (report Report, err er
 	return report, nil
 }
 
+// ReportOptions configures subscription setup. Buffer defaults to 64 (maximum 4096); GI is
+// opt-in. ResumeEntryID and PurgeBuffer are mutually exclusive BRCB options.
 type ReportOptions struct {
 	Buffer        int // zero selects 64; maximum is 4096
 	GI            bool
@@ -328,9 +348,16 @@ type ReportSubscription struct {
 	reserved bool
 }
 
+// Events returns the bounded event stream. Drain it promptly and inspect Err after the channel
+// closes.
 func (s *ReportSubscription) Events() <-chan ReportEvent { return s.events }
-func (s *ReportSubscription) Err() error                 { s.mu.Lock(); defer s.mu.Unlock(); return s.err }
-func (s *ReportSubscription) Block() mms.ObjectName      { return s.block }
+
+// Err returns the terminal failure, or nil while no failure has been recorded. It is safe to
+// call concurrently.
+func (s *ReportSubscription) Err() error { s.mu.Lock(); defer s.mu.Unlock(); return s.err }
+
+// Block returns the RP/BR object owned by this subscription.
+func (s *ReportSubscription) Block() mms.ObjectName { return s.block }
 func (s *ReportSubscription) finish(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -511,16 +538,23 @@ func (c *Client) subscribeReport(ctx context.Context, block mms.ObjectName, opti
 	return s, nil
 }
 
-// Interrogate requests a fresh complete dataset using the engineered GI trigger.
+// Interrogate requests GI using the engineered trigger. Reports arrive on
+// Events without a request correlation ID; retained GI may predate this call.
+// Use ReadSnapshot when a confirmed current read is required.
 func (s *ReportSubscription) Interrogate(ctx context.Context) error {
 	return s.client.Write(ctx, mms.DomainName(s.block.Domain, s.block.Item+"$GI"), data.Boolean(true))
 }
 
+// Close stops this subscription with a two-second cleanup deadline. It leaves
+// the client usable on success; uncertain remote cleanup closes the association.
 func (s *ReportSubscription) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	return s.Stop(ctx)
 }
+
+// Stop disables this association's report block and releases its reservation. ctx bounds
+// cleanup; ambiguous remote cleanup closes the association.
 func (s *ReportSubscription) Stop(ctx context.Context) error {
 	c := s.client
 	if c.Err() != nil {

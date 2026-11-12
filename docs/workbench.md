@@ -74,7 +74,7 @@ Integers are represented as decimal JSON strings so INT64 and UINT64 values reta
 | [internal/workbench/web/app.js](../internal/workbench/web/app.js) | `api`, `selectDevice`, `savePoint` and `operate` follow the browser interaction |
 | [examples/scd/breaker/process.go](../examples/scd/breaker/process.go) | A driver interface for integrating actual acquisition, interlocks and actuator results |
 
-`bindControls` is the workbench's virtual actuator. It accepts modeled SPC/DPC immediate direct-with-normal-security controls, checks the session interlock and updates the matching ST feedback. To integrate device hardware, reuse the public `scl.IED.OnOperate` and `Update` interfaces as shown in the SCD example. [SCL API and common paths](api/scl.md)
+`bindControls` is the workbench's virtual actuator. It accepts modeled immediate SPC/DPC controls through `OnControl`, checks the session interlock and updates matching ST feedback. Integrate hardware through public `scl.IED.OnControl` and `Update`; `OnOperate` remains available for direct-normal binary controls. Keep physical feedback independent of command acceptance. [SCL API and common paths](api/scl.md)
 
 ```mermaid
 flowchart LR
@@ -107,6 +107,22 @@ The API uses JSON except for raw SCL uploads. Successful responses contain the r
 | `GET /api/connections/{id}/domains` / `names?domain=…` / `value?domain=…&item=…` | Browse and read a remote peer |
 | `POST /api/connections/{id}/value` | Write `{"Domain":"…","Item":"…","Value":42}` |
 | `GET /api/events` | Bounded event journal updates through Server-Sent Events |
+| `GET /api/models/{id}/project` | Inspect SubNetworks, ServerAt, equipment and supported semantic diagnostics |
+| `POST /api/models/compare` | Compare `{"Before":"model id","After":"model id","IED":"BayIED","AP":"S1"}` |
+| `GET /api/models/{id}/inputs?ied=BayIED&ap=S1` | Inspect scoped ExtRef declarations (including client-only access points) |
+| `GET /api/connections/{id}/discover?domain=optional-LD` | Discover online types, datasets, RCBs and SGCBs without SCL |
+| `POST /api/connections/{id}/reports` | Subscribe using `{"Domain":"BayIEDCTRL","Item":"LLN0$BR$history01","Options":{"Buffer":64,"GI":false}}` |
+| `DELETE /api/connections/{id}/reports?domain=BayIEDCTRL&item=LLN0%24BR%24history01` | Stop that block's subscription |
+| `POST /api/connections/{id}/snapshot` | Confirmed current dataset read: `{"Domain":"BayIEDCTRL","Item":"LLN0$dsEvents"}`; values are appended to report-history with source `confirmed-read` |
+| `GET /api/connections/{id}/report-history?after=0` | Fetch the bounded structured history; `after` is the local record index, not a BRCB EntryID |
+| `POST /api/connections/{id}/controls` | `{"Reference":"BayIEDCTRL/XCBR1.Pos","Action":"operate","Value":true,"Options":{"InterlockCheck":true}}`; Action also accepts `select` or `cancel` |
+| `GET /api/connections/{id}/settings?domain=BayIEDCTRL` | Read NumOfSG/ActSG/EditSG from the selected domain |
+| `POST /api/connections/{id}/settings` | Edit/confirm with `{"Domain":"BayIEDCTRL","Group":2,"Values":{"PTOC1.StrVal.setMag.f":12},"Activate":false}` or activate an existing group with `ActivateOnly:true` and no Values |
+
+Control and setting operations preserve partial protocol evidence in a normal JSON reply: inspect both `result` and `error`, even for HTTP 200. `Acknowledged` is not physical feedback. When operating a saved selection, the selected value/options are reused. Paths and datasets above are examples; discover or inspect the actual target before submitting.
+
+For buffered resume, `Options.ResumeEntryID` is a JSON base64 byte string (`"AAAAAAAAAAA="` requests retained history from the beginning). The browser accepts hexadecimal and converts it. Do not combine ResumeEntryID with PurgeBuffer. History contains the latest 500 records per live connection and is lost when that connection/workbench is closed. `Oldest`, `Last` and `gap` describe local history retention; they are separate from the server's report EntryID/sequence. Current reads add history records but never advance a BRCB cursor.
+
 
 ## Build and advanced diagnostics
 
@@ -120,4 +136,20 @@ The build scripts also produce the single `iedlab` executable. The former six pr
 
 The transport lifecycle is implemented in the public [simulator package](../simulator/runtime.go); client-side control uses the public [ied package](api/ied.md). Other programs can import them without importing `internal/workbench`.
 
-Use **Station sample → Start station** to start a shared multi-IED GOOSE/SV bus. The live input panel shows ExtRef values. MU sources publish current editable model values, unsynchronized; application calculations are explicit. CLI: `iedlab simulate -station -file station.scd`. See [station orchestration](api/engineering.md#run-the-complete-station).
+Use **Station sample → Start station** to start multi-IED GOOSE/SV buses isolated by SubNetwork. The live input panel shows ExtRef values. MU sources publish current editable model values, unsynchronized; application calculations are explicit. CLI: `iedlab simulate -station -file station.scd`. See [station orchestration](api/engineering.md#run-the-complete-station).
+
+## Online services and engineering networks
+
+In MMS client, connect to an IED, select the connection and choose Discover
+services. This works without an SCL file. Report cards support subscribe/GI,
+explicit resume, stop and a separate current read. The structured report panel
+shows source, EntryID, sequence, segments, gaps and typed values. Export JSON
+retains this bounded session history (latest 500 records); it is process-local.
+The control panel exposes select, operate and cancel and preserves acceptance
+and termination results. The settings panel reads groups, edits/confirms SE
+values and explicitly activates an existing group.
+
+Engineering & reports shows SubNetworks and ServerAt physical ports. Import
+another revision and compare the selected IED/AP. Dataset and input information
+retains receiver scope. Station cards show q, smpSynch, receive time, network,
+validity and timeout state. Protocol sources and calculations use public SDK APIs.

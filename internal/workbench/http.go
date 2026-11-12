@@ -26,6 +26,7 @@ var webFiles embed.FS
 // have bounded bodies/deadlines. HTTP never accepts arbitrary host file paths.
 func (m *Manager) Handler() http.Handler {
 	mux := http.NewServeMux()
+	m.onlineRoutes(mux)
 	mux.HandleFunc("GET /api/stations", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, m.Stations()) })
 	mux.HandleFunc("POST /api/models/{id}/station", func(w http.ResponseWriter, r *http.Request) {
 		v, err := m.StartStation(r.PathValue("id"))
@@ -94,7 +95,7 @@ func (m *Manager) Handler() http.Handler {
 			writeError(w, ErrNotFound)
 			return
 		}
-		inputs, err := doc.system.GOOSEInputs(r.URL.Query().Get("ied"), r.URL.Query().Get("ap"))
+		inputs, err := doc.system.Inputs(r.URL.Query().Get("ied"), r.URL.Query().Get("ap"))
 		respond(w, inputs, err)
 	})
 	mux.HandleFunc("GET /api/models/{id}/source", func(w http.ResponseWriter, r *http.Request) {

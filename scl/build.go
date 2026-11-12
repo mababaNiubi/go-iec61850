@@ -13,6 +13,30 @@ import (
 // Device resolves a single access point into an independent MMS store and
 // its configured GOOSE streams. Other IEDs may use different profiles.
 func (s *System) Device(iedName, apName string) (*IED, error) {
+	owner, err := s.ServerAccessPoint(iedName, apName)
+	if err != nil {
+		return nil, err
+	}
+	if owner != "" && owner != apName {
+		// Construct the owning logical server once; the alias only supplies
+		// another physical endpoint and must not invent duplicate GSE blocks.
+		d, err := s.Device(iedName, owner)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range s.doc.Connections {
+			if c.IED == iedName && c.AP == apName {
+				params, e := parameters(c.Address)
+				if e != nil {
+					return nil, e
+				}
+				if e = d.configureEndpoint(params); e != nil {
+					return nil, e
+				}
+			}
+		}
+		return d, nil
+	}
 	ap, err := s.find(iedName, apName)
 	if err != nil {
 		return nil, err

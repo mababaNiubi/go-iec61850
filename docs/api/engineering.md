@@ -2,6 +2,9 @@
 
 [中文](engineering.zh-CN.md)
 
+[Point selection](#select-points-by-primary-equipment) · [Reporting](#start-an-engineered-reporting-server) · [BRCB resume](#resume-buffered-history) · [Controls/settings](#control-and-configure-equipment) · [Station](#run-the-complete-station) · [Online discovery/current reads](#online-discovery-and-current-snapshots) · [Networks/bindings](#engineering-validation-and-application-bindings)
+
+
 Run the complete station example from the repository root.
 
 ```sh
@@ -43,8 +46,8 @@ when that selected device requires an unsupported declaration.
 Use `catalog.CheckOnline(ctx, client.MMS())` before accepting an engineering
 mapping. It compares online types and static dataset member order, returning
 all discrepancies. `scl.CheckDataSet` checks a selected dataset independently.
-With only an IED address available, use `client.MMS().Names` and
-`GetVariableAccessAttributes` to browse the actual online declarations.
+With only an IED address, use [client.Discover](#online-discovery-and-current-snapshots)
+for bounded online types, datasets, report blocks and setting groups.
 
 ## Start an engineered reporting server
 
@@ -233,3 +236,83 @@ For enhanced binary controls, OnControl runs after successful MMS Operate
 acceptance. A callback failure produces negative CommandTermination. The client
 can distinguish Acknowledged from Terminated. The execution context ends when
 the association closes. Normal-security callbacks remain synchronous.
+
+## Online discovery and current snapshots
+
+Available in v1.4.0. See the [API entry point](README.md) for imports, ownership and result contracts; the [GoDoc examples](../../ied/example_test.go) execute discovery and current reads against a local MMS server.
+
+Connect without SCL and discover actual datasets, control blocks and types.
+
+```go
+ctx := context.Background()
+client, err := ied.Dial(ctx, "127.0.0.1:8102", ied.Config{})
+if err != nil { return err }
+defer client.Close()
+directory, err := client.Discover(ctx, ied.DiscoveryOptions{MaxObjects: 4096})
+if err != nil { return err }
+for _, block := range directory.Reports {
+    fmt.Println(block.Name, block.DataSet, block.ConfRev, block.Error)
+}
+```
+
+Check Diagnostics and Truncated before treating discovery as complete. Network,
+primary equipment and ExtRef information comes from SCL. A discovery context
+bounds the operation. Unsupported objects do not hide other usable objects.
+
+SubscribeBRCB continues to deliver complete retained events. Commit EntryID
+only after the application has durably handled that report. A GI reason can
+belong to an earlier session. `subscription.ReadSnapshot(ctx)` provides an
+independent current dataset Read; its result has no EntryID and must not advance
+the history cursor. Use `client.ReadDataSet(ctx, name)` without a subscription.
+Both results provide `Leaves()` to expand typed FCD values with their q and t.
+A response contains one MMS transaction. Coherence between separate FCDA values
+depends on the remote store. Prefer FCD members for related value/q/t.
+
+The built-in Model and SCL IED now serve batch reads from one acquisition image.
+A custom store may implement mms.BatchReader. Existing stores keep their Read
+behavior; decorators explicitly forward batching when supported.
+
+## Engineering validation and application bindings
+
+`system.Project()` returns SubNetworks, AP/ServerAt ownership, primary equipment
+and supported semantic diagnostics. `system.Inputs(ied, ap)` lists every service
+with receiving LD/LN and declaration position. InputReference.Key remains stable
+without intAddr. ResolveGOOSEInput and ResolveSVInput accept that scoped reference.
+The earlier intAddr lookup methods remain available. CompareCatalog compares
+point types, units, quality/time bindings, ordered FCDA selections, report
+revisions and input sources. ReportSettings preserves Fix/Conf/Dyn declarations;
+only Dyn permits online RCB field changes. These supported semantic checks do
+not replace an edition-matching external XSD or full NSD validation.
+
+StartStation owns one bus per SubNetwork. ServerAt exposes another physical
+port of the same server without bridging networks. StrictInputs rejects
+unresolved/disconnected inputs; normal inspection retains them as unbound.
+
+```go
+station, err := simulator.StartStation(ctx, system, simulator.StationOptions{
+    Models: map[string]*scl.IED{"BayIED/S1": bay},
+    StrictInputs: true,
+    InputTimeout: time.Second,
+    OnSample: func(ctx context.Context, group simulator.SampleEvent) error {
+        // All fields belong to one ASDU, including unchanged samples.
+        for _, input := range group.Inputs {
+            fmt.Println(input.Address, input.Value, input.Valid, input.Quality)
+        }
+        return nil
+    },
+})
+if err != nil { return err }
+defer station.Close()
+```
+
+Replace the callback body with acquisition calculations and commit outputs
+through bay.Update. The runnable station example supplies the full three-phase
+power calculation, sample source and independent control/GOOSE feedback. OnGOOSE
+delivers complete accepted status events. Observe emits changes for interfaces.
+Callbacks return promptly and perform shutdown from the owner.
+
+InputReading retains Value and ReceivedAt separately from Valid, State,
+ValidUntil and LastGoodAt. Station conservatively marks nonzero source quality
+unusable and retains all quality bits. SampleSync remains separately visible.
+GOOSE expires by TAL and SV by InputTimeout. NominalFrequency supports 50/60 Hz.
+The software scheduler provides no synchronized physical sampling clock.

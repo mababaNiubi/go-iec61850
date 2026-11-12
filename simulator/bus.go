@@ -17,6 +17,8 @@ type MemoryBus struct {
 	ports  map[*BusPort]struct{}
 	closed bool
 }
+
+// BusPort is one caller-owned MemoryBus endpoint with one frame reader. Close detaches it from the bus.
 type BusPort struct {
 	bus    *MemoryBus
 	frames chan []byte
@@ -24,6 +26,8 @@ type BusPort struct {
 	closed bool // bus.mu
 }
 
+// Open attaches an endpoint with capacity 1..65536 frames. A zero MemoryBus is ready to
+// use; at most 256 ports may be attached.
 func (b *MemoryBus) Open(capacity int) (*BusPort, error) {
 	if capacity < 1 || capacity > 65536 {
 		return nil, fmt.Errorf("simulator: bus capacity must be 1..65536")
@@ -43,6 +47,8 @@ func (b *MemoryBus) Open(capacity int) (*BusPort, error) {
 	b.ports[p] = struct{}{}
 	return p, nil
 }
+
+// ReadFrame waits for one caller-owned frame copy, cancellation or endpoint closure.
 func (p *BusPort) ReadFrame(ctx context.Context) ([]byte, error) {
 	select {
 	case <-ctx.Done():
@@ -53,6 +59,9 @@ func (p *BusPort) ReadFrame(ctx context.Context) ([]byte, error) {
 		return bytes.Clone(frame), nil
 	}
 }
+
+// WriteFrame broadcasts a copied Ethernet frame atomically to all bus ports. Any full queue
+// rejects the entire broadcast instead of silently dropping a recipient.
 func (p *BusPort) WriteFrame(ctx context.Context, frame []byte) error {
 	if len(frame) < 14 || len(frame) > 1522 {
 		return fmt.Errorf("simulator: invalid Ethernet frame size")
@@ -77,6 +86,8 @@ func (p *BusPort) WriteFrame(ctx context.Context, frame []byte) error {
 	}
 	return nil
 }
+
+// Close detaches the port and unblocks its reader. It is idempotent.
 func (p *BusPort) Close() error {
 	b := p.bus
 	b.mu.Lock()
@@ -88,6 +99,8 @@ func (p *BusPort) Close() error {
 	}
 	return nil
 }
+
+// Close closes the bus and all ports, unblocking their readers. It is idempotent.
 func (b *MemoryBus) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()

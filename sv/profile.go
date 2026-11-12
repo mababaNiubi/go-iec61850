@@ -20,6 +20,10 @@ type Profile struct {
 	WithDataSet, WithRate, WithTime, WithIdentity bool
 	Layout                                        Layout
 }
+
+// SyncPolicy selects accepted sample synchronization: Synchronized accepts local/global
+// sync, GlobalSynchronized requires global sync, and AnySynchronization also accepts
+// unsynchronized samples.
 type SyncPolicy uint8
 
 const (
@@ -28,6 +32,9 @@ const (
 	AnySynchronization
 )
 
+// SubscriptionOptions supplies local filters and timing policy. NominalFrequency zero
+// selects 50Hz; Timeout zero selects one second. The zero SyncPolicy rejects unsynchronized
+// samples.
 type SubscriptionOptions struct {
 	Source           *[6]byte
 	NominalFrequency uint16 // zero uses 50; only 50 and 60 are supported
@@ -36,6 +43,7 @@ type SubscriptionOptions struct {
 	SyncPolicy       SyncPolicy
 }
 
+// Clone returns an independent copy of the engineered VLAN and layout metadata.
 func (p Profile) Clone() Profile {
 	if p.VLAN != nil {
 		vlan := *p.VLAN
@@ -44,6 +52,10 @@ func (p Profile) Clone() Profile {
 	p.Layout = p.Layout.Clone()
 	return p
 }
+
+// SubscriptionConfig validates the layout and derives subscriber filters and counter
+// modulus from the profile. Explicit CounterModulus overrides the derived value;
+// synchronization policy remains local.
 func (p Profile) SubscriptionConfig(options SubscriptionOptions) (SubscriptionConfig, error) {
 	if err := p.Layout.Validate(); err != nil {
 		return SubscriptionConfig{}, err

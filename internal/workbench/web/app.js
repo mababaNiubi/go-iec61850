@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // This frontend has no build step. Put breakpoints in api(), selectDevice(),
 // savePoint() and operate() to follow the HTTP -> Go -> MMS -> feedback path.
+import { createEngineeringUI } from "./engineering.js";
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) =>
   String(value ?? "").replace(
@@ -54,6 +55,8 @@ const dictionaries = {
     checkModel: "Check against connected IED",
     subscribe: "Subscribe + GI",
     stopReport: "Stop subscription",
+    serviceConnection: "Connection",
+    discoverServices: "Discover services",
     reportHint:
       "Report values and EntryID appear in the event journal. A BRCB resume cursor uses hexadecimal bytes.",
   },
@@ -99,6 +102,8 @@ const dictionaries = {
     checkModel: "与已连接 IED 核对",
     subscribe: "订阅并总召",
     stopReport: "停止订阅",
+    serviceConnection: "连接",
+    discoverServices: "发现在线服务",
     reportHint:
       "报告值和 EntryID 显示在事件日志中。BRCB 续传标识填写十六进制字节。",
   },
@@ -160,6 +165,8 @@ function notify(message, error = false) {
     error ? 6500 : 3000,
   );
 }
+
+const engineeringUI = createEngineeringUI({api, state, esc, guard, notify, locale:() => language, readRemote});
 function guard(fn) {
   return async (event) => {
     try {
@@ -170,6 +177,7 @@ function guard(fn) {
   };
 }
 function applyLanguage() {
+  engineeringUI.languageChanged();
   document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
   document.querySelectorAll("[data-i18n]").forEach((element) => {
     element.textContent = tr(element.dataset.i18n);
@@ -221,7 +229,7 @@ function renderStation() {
     station.inputs
       .map(
         (input) =>
-          '<div class="station-reading"><strong>' +
+          '<div class="station-reading ' + (input.valid ? "valid" : "invalid") + '"><strong>' +
           esc(input.receiver + "/" + input.input) +
           "</strong><span>" +
           esc(input.service) +
@@ -230,7 +238,11 @@ function renderStation() {
           "</span><small>" +
           esc(input.error || input.source) +
           " · #" +
-          input.counter +
+          (input.service === "GOOSE" ? input.state_number + "/" + input.sequence_number : input.counter) +
+          " · " + esc(input.state) + " · " + esc(input.network) +
+          (input.has_quality ? " · q=" + input.quality : "") +
+          (input.service === "SV" ? " · smpSynch=" + input.sample_sync : "") +
+          "</small><small>" + esc(input.received_at) +
           "</small></div>",
       )
       .join("") +
@@ -753,7 +765,7 @@ function inputRows(inputs) {
         .map(
           (i) =>
             '<div class="member"><strong>' +
-            esc(i.IntAddr || "(unbound)") +
+            esc((i.IntAddr || i.ReceiverLN + "/" + i.Index) + " · " + i.Service) +
             "</strong><p>" +
             esc(
               i.SourceIED +
@@ -769,7 +781,7 @@ function inputRows(inputs) {
             "</span></div>",
         )
         .join("")
-    : '<p class="form-note">No GOOSE ExtRef declarations in this model.</p>';
+    : '<p class="form-note">No ExtRef declarations in this access point.</p>';
 }
 function showTab(tab) {
   state.tab = tab;
@@ -985,6 +997,7 @@ function renderEngineering() {
           );
         })),
     );
+  engineeringUI.project(box,state.catalogRef).catch(error => notify(error.message,true));
 }
 function renderEvents() {
   const filter = $("#event-filter").value;
@@ -1055,6 +1068,7 @@ async function connect(address) {
   await renderConnections();
 }
 async function renderConnections() {
+  engineeringUI.connectionsChanged();
   const tree = $("#remote-tree");
   if (!state.connections.length) {
     tree.innerHTML = "<p>No active MMS connections.</p>";
@@ -1327,6 +1341,7 @@ events.onerror = () => {
   $("#live-state").textContent = "Reconnecting…";
 };
 setInterval(() => {
+  engineeringUI.refreshHistory().catch(error => notify(error.message,true));
   if (state.deviceId && !document.hidden) refreshDetail().catch(() => {});
   if (state.stations.length && !document.hidden)
     refreshStation().catch(() => {});

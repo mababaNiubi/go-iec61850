@@ -41,10 +41,13 @@ type reportXML struct {
 		Revision  bool `xml:"configRef,attr"`
 	} `xml:"OptFields"`
 	Enabled struct {
-		Max int `xml:"max,attr"`
+		Max     int             `xml:"max,attr"`
+		Clients []NodeReference `xml:"ClientLN"`
 	} `xml:"RptEnabled"`
 }
 
+// ReportInfo identifies a runnable indexed RP/BR instance, its bound dataset, buffered mode
+// and configuration revision.
 type ReportInfo struct {
 	Name     mms.ObjectName
 	DataSet  mms.ObjectName
@@ -360,6 +363,21 @@ func (b *reportBlock) flush() {
 }
 func (d *IED) fullReportLocked(b *reportBlock, reason byte) {
 	b.flush()
+	if reason == 0x04 {
+		// Only the most recent GI belongs in retained history. Keeping every
+		// older interrogation can replay obsolete full snapshots indefinitely.
+		queue := make([]reportRecord, 0, len(b.queue))
+		for _, record := range b.queue {
+			gi := len(record.reasons) > 0
+			for _, r := range record.reasons {
+				gi = gi && r == 0x04
+			}
+			if !gi {
+				queue = append(queue, record)
+			}
+		}
+		b.queue = queue
+	}
 	set := d.sets[b.info.DataSet]
 	r := reportRecord{timestamp: time.Now(), values: make([]mms.Value, len(set.Variables)), reasons: make([]byte, len(set.Variables))}
 	for i, a := range set.Variables {
@@ -589,6 +607,10 @@ func (d *IED) reportAccessLocked(ctx context.Context, n mms.ObjectName, value *m
 		return v, true, err
 	}
 	a := mms.AssociationFromContext(ctx)
+	settings, err := d.system.ReportSettings(d.name, d.ap)
+	if err != nil || !settings.online(field) {
+		return mms.Value{}, true, mms.ObjectAccessDenied
+	}
 	if a == nil || b.owner != nil && b.owner != a {
 		return mms.Value{}, true, mms.TemporarilyUnavailable
 	}

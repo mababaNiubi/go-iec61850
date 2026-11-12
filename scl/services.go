@@ -14,6 +14,10 @@ func (d *IED) readService(ctx context.Context, a mms.VariableAccess) (mms.Value,
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.readAccessServiceLocked(ctx, a)
+}
+
+func (d *IED) readAccessServiceLocked(ctx context.Context, a mms.VariableAccess) (mms.Value, bool, error) {
 	if len(a.Selection.Path) > 0 || a.Selection.Index != nil {
 		value, handled, err := d.readServiceLocked(ctx, mms.Access(a.Name))
 		if !handled || err != nil {

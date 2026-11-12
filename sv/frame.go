@@ -26,6 +26,7 @@ type Frame struct {
 	PDU                         PDU
 }
 
+// Clone returns an independent copy of the VLAN metadata and all ASDU payloads.
 func (f Frame) Clone() Frame {
 	if f.VLAN != nil {
 		v := *f.VLAN
@@ -35,6 +36,8 @@ func (f Frame) Clone() Frame {
 	return f
 }
 
+// EncodeFrame validates and encodes an Ethernet SV frame without FCS, including optional
+// VLAN and minimum Ethernet padding.
 func EncodeFrame(f Frame) ([]byte, error) {
 	if f.VLAN != nil && (f.VLAN.Priority > 7 || f.VLAN.ID >= 4095) {
 		return nil, malformed("invalid VLAN priority or ID")

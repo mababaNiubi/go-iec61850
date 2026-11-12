@@ -1,7 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package scl maps a selected SCL server's data model, static datasets and
-// ordinary GOOSE controls to the mms and goose packages.
+// Package scl parses supported IEC 61850 engineering declarations and maps
+// selected server data models, datasets, controls, reports, settings and
+// multicast GOOSE/SV layouts to public protocol APIs.
+//
+// Parse/ParseFile load a bounded XML document without opening transports. Use
+// AccessPoints, Project and Catalog for inspection, then Device to construct
+// an independent supported runtime store. Catalog reports unsupported DOs
+// individually; Device requires a complete supported model.
+//
+// Lookup, Resolve and Signal translate engineered references into checked MMS
+// names. Commit local acquisitions with IED.Update and bind execution with
+// OnControl before serving. Inputs retain receiving LD/LN scope; resolve them
+// with ResolveGOOSEInput or ResolveSVInput instead of assuming intAddr is unique.
+// Semantic checks do not imply full XSD/NSD or IEC conformance validation.
 package scl
 
 import (
@@ -32,17 +44,23 @@ type document struct {
 	Release     string          `xml:"release,attr"`
 	Substations []substationXML `xml:"Substation"`
 	IEDs        []xmlIED        `xml:"IED"`
-	Connections []connection    `xml:"Communication>SubNetwork>ConnectedAP"`
+	Networks    []networkXML    `xml:"Communication>SubNetwork"`
+	Connections []connection    `xml:"-"` // flattened with network identity after decoding
 	Types       templates       `xml:"DataTypeTemplates"`
 }
 type xmlIED struct {
-	Name string        `xml:"name,attr"`
-	APs  []accessPoint `xml:"AccessPoint"`
+	Name     string        `xml:"name,attr"`
+	APs      []accessPoint `xml:"AccessPoint"`
+	Services *servicesXML  `xml:"Services"`
 }
 type accessPoint struct {
 	ClientNodes []logicalNode `xml:"LN"`
 	Name        string        `xml:"name,attr"`
-	Server      *struct {
+	ServerAt    *struct {
+		AP string `xml:"apName,attr"`
+	} `xml:"ServerAt"`
+	Services *servicesXML `xml:"Services"`
+	Server   *struct {
 		Devices []logicalDevice `xml:"LDevice"`
 	} `xml:"Server"`
 }
@@ -178,11 +196,18 @@ type gse struct {
 	Max     *timing `xml:"MaxTime"`
 }
 type connection struct {
+	Network string   `xml:"-"`
 	IED     string   `xml:"iedName,attr"`
 	AP      string   `xml:"apName,attr"`
 	Address []param  `xml:"Address>P"`
 	GSE     []gse    `xml:"GSE"`
 	SMV     []smvXML `xml:"SMV"`
+}
+
+type networkXML struct {
+	Name        string       `xml:"name,attr"`
+	Type        string       `xml:"type,attr"`
+	Connections []connection `xml:"ConnectedAP"`
 }
 
 // Parse reads one SCL document (up to 16 MiB). Foreign extension elements
@@ -229,6 +254,17 @@ func Parse(r io.Reader) (*System, error) {
 	}
 	if len(s.doc.IEDs) == 0 && len(s.doc.Substations) == 0 {
 		return nil, fmt.Errorf("scl: no IED declarations")
+	}
+	seenNetworks := map[string]bool{}
+	for _, network := range s.doc.Networks {
+		if network.Name == "" || seenNetworks[network.Name] {
+			return nil, fmt.Errorf("scl: missing or duplicate SubNetwork %q", network.Name)
+		}
+		seenNetworks[network.Name] = true
+		for _, connection := range network.Connections {
+			connection.Network = network.Name
+			s.doc.Connections = append(s.doc.Connections, connection)
+		}
 	}
 	if s.lnTypes, err = index(s.doc.Types.LN, func(t lnType) string { return t.ID }); err != nil {
 		return nil, err
@@ -344,18 +380,22 @@ func (r *sclTokens) Token() (xml.Token, error) {
 type AccessPoint struct {
 	IED, AP   string
 	HasServer bool
+	ServerAP  string // owning AP, including resolved ServerAt aliases
 }
 
+// AccessPoints lists declarations in document order. HasServer marks the owning AP; ServerAP
+// also identifies ServerAt aliases.
 func (s *System) AccessPoints() []AccessPoint {
 	var points []AccessPoint
 	for _, i := range s.doc.IEDs {
 		for _, a := range i.APs {
-			points = append(points, AccessPoint{IED: i.Name, AP: a.Name, HasServer: a.Server != nil})
+			owner, _ := s.ServerAccessPoint(i.Name, a.Name)
+			points = append(points, AccessPoint{IED: i.Name, AP: a.Name, HasServer: a.Server != nil, ServerAP: owner})
 		}
 	}
 	return points
 }
-func (s *System) find(ied, ap string) (accessPoint, error) {
+func (s *System) findRaw(ied, ap string) (accessPoint, error) {
 	for _, i := range s.doc.IEDs {
 		if i.Name == ied {
 			for _, a := range i.APs {
@@ -366,4 +406,23 @@ func (s *System) find(ied, ap string) (accessPoint, error) {
 		}
 	}
 	return accessPoint{}, fmt.Errorf("scl: access point %s/%s not found", ied, ap)
+}
+
+func (s *System) find(ied, ap string) (accessPoint, error) {
+	point, err := s.findRaw(ied, ap)
+	if err != nil || point.ServerAt == nil {
+		return point, err
+	}
+	owner, err := s.ServerAccessPoint(ied, ap)
+	if err != nil {
+		return accessPoint{}, err
+	}
+	server, err := s.findRaw(ied, owner)
+	if err == nil {
+		point.Server = server.Server
+		if point.Services == nil {
+			point.Services = server.Services
+		}
+	}
+	return point, err
 }

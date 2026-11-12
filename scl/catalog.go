@@ -12,18 +12,37 @@ import (
 )
 
 type substationXML struct {
-	Name   string `xml:"name,attr"`
-	Levels []struct {
-		Name string `xml:"name,attr"`
-		Bays []struct {
-			Name      string `xml:"name,attr"`
-			Equipment []struct {
-				Name  string          `xml:"name,attr"`
-				Type  string          `xml:"type,attr"`
-				Nodes []NodeReference `xml:"LNode"`
-			} `xml:"ConductingEquipment"`
+	Name         string         `xml:"name,attr"`
+	Transformers []equipmentXML `xml:"PowerTransformer"`
+	Levels       []struct {
+		Name         string         `xml:"name,attr"`
+		Transformers []equipmentXML `xml:"PowerTransformer"`
+		Bays         []struct {
+			Name         string         `xml:"name,attr"`
+			Equipment    []equipmentXML `xml:"ConductingEquipment"`
+			Transformers []equipmentXML `xml:"PowerTransformer"`
+			Connections  []equipmentXML `xml:"ConnectivityNode"`
 		} `xml:"Bay"`
 	} `xml:"VoltageLevel"`
+}
+
+type equipmentXML struct {
+	Name      string          `xml:"name,attr"`
+	Type      string          `xml:"type,attr"`
+	Nodes     []NodeReference `xml:"LNode"`
+	Terminals []Terminal      `xml:"Terminal"`
+	Windings  []equipmentXML  `xml:"TransformerWinding"`
+	Sub       []equipmentXML  `xml:"SubEquipment"`
+}
+
+// Terminal keeps the engineered connection to a ConnectivityNode.
+type Terminal struct {
+	Name             string `xml:"name,attr"`
+	ConnectivityNode string `xml:"connectivityNode,attr"`
+	Substation       string `xml:"substationName,attr"`
+	VoltageLevel     string `xml:"voltageLevelName,attr"`
+	Bay              string `xml:"bayName,attr"`
+	Node             string `xml:"cNodeName,attr"`
 }
 
 // NodeReference connects primary equipment to an engineered logical node.
@@ -35,21 +54,41 @@ type NodeReference struct {
 	Instance string `xml:"lnInst,attr"`
 }
 
+// Equipment connects a primary-equipment path to logical nodes and terminal connectivity
+// declarations.
 type Equipment struct {
 	Path, Type string
 	Nodes      []NodeReference
+	Terminals  []Terminal
 }
 
 // Equipment returns the station/voltage-level/bay/equipment hierarchy without
 // instantiating a server. This also works for an engineering-only SCL document.
 func (s *System) Equipment() []Equipment {
 	var out []Equipment
+	var collect func(string, string, []equipmentXML)
+	collect = func(parent, kind string, equipment []equipmentXML) {
+		for _, item := range equipment {
+			path := parent + "/" + item.Name
+			typ := item.Type
+			if typ == "" {
+				typ = kind
+			}
+			out = append(out, Equipment{Path: path, Type: typ, Nodes: append([]NodeReference(nil), item.Nodes...), Terminals: append([]Terminal(nil), item.Terminals...)})
+			collect(path, "TransformerWinding", item.Windings)
+			collect(path, "SubEquipment", item.Sub)
+		}
+	}
 	for _, station := range s.doc.Substations {
+		collect(station.Name, "PTR", station.Transformers)
 		for _, level := range station.Levels {
+			base := station.Name + "/" + level.Name
+			collect(base, "PTR", level.Transformers)
 			for _, bay := range level.Bays {
-				for _, item := range bay.Equipment {
-					out = append(out, Equipment{Path: strings.Join([]string{station.Name, level.Name, bay.Name, item.Name}, "/"), Type: item.Type, Nodes: append([]NodeReference(nil), item.Nodes...)})
-				}
+				path := base + "/" + bay.Name
+				collect(path, "ConductingEquipment", bay.Equipment)
+				collect(path, "PTR", bay.Transformers)
+				collect(path, "ConnectivityNode", bay.Connections)
 			}
 		}
 	}
@@ -70,13 +109,21 @@ type ModelPoint struct {
 	Equipment          []string
 }
 
+// Diagnostic locates a declaration that could not be resolved or supported. Other catalog
+// entries remain inspectable.
 type Diagnostic struct{ Reference, Message string }
+
+// Catalog is one selected IED/AP's typed point and dataset inventory with source semantics and
+// partial-model diagnostics.
 type Catalog struct {
 	Version, Revision, Release string
 	Points                     []ModelPoint
 	Equipment                  []Equipment
 	Diagnostics                []Diagnostic
 	DataSets                   []mms.NamedList
+	Reports                    []ReportDeclaration
+	Inputs                     []InputReference
+	ReportSettings             *ReportSettings
 }
 
 // Catalog inspects each DO independently. An unsupported DO is a diagnostic
@@ -88,6 +135,11 @@ func (s *System) Catalog(ied, ap string) (Catalog, error) {
 		return Catalog{}, err
 	}
 	out := Catalog{Version: s.doc.Version, Revision: s.doc.Revision, Release: s.doc.Release, Equipment: s.Equipment()}
+	out.Inputs, _ = s.Inputs(ied, ap)
+	out.ReportSettings, err = s.ReportSettings(ied, ap)
+	if err != nil {
+		out.Diagnostics = append(out.Diagnostics, Diagnostic{ied + "/" + ap, err.Error()})
+	}
 	if p.Server == nil {
 		return out, nil
 	}
@@ -105,9 +157,12 @@ func (s *System) Catalog(ied, ap string) (Catalog, error) {
 			domain = ied + ld.Inst
 		}
 		for _, ln := range append(append([]logicalNode(nil), ld.Zero...), ld.Nodes...) {
+			for _, block := range ln.Reports {
+				out.Reports = append(out.Reports, ReportDeclaration{LD: ld.Inst, LN: ln.name(), Name: block.Name, DataSet: block.Set, ConfRev: block.Revision, Buffered: block.Buffered, Clients: append([]NodeReference(nil), block.Enabled.Clients...)})
+			}
 			lt, ok := s.lnTypes[ln.Type]
-			if !ok {
-				out.Diagnostics = append(out.Diagnostics, Diagnostic{domain + "/" + ln.name(), "unresolved LNodeType"})
+			if !ok || lt.Class != ln.Class {
+				out.Diagnostics = append(out.Diagnostics, Diagnostic{domain + "/" + ln.name(), "unresolved or mismatched LNodeType " + ln.Type})
 				continue
 			}
 			for _, decl := range lt.Objects {

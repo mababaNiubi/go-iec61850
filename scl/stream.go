@@ -33,14 +33,19 @@ type StreamInfo struct {
 	VLAN                     *goose.VLAN
 	MinTime, MaxTime         time.Duration
 	Members                  []mms.ObjectName
+	Accesses                 []mms.VariableAccess // ordered FCDA members with alternate access
 }
 
+// Info returns an independent copy of stream addressing, timing and ordered dataset accesses,
+// including array selection.
 func (g *Stream) Info() StreamInfo {
 	f := g.frame.Clone()
 	i := StreamInfo{Reference: f.PDU.GoCBRef, DataSet: f.PDU.DataSet, GoID: f.PDU.GoID, ConfRev: f.PDU.ConfRev,
 		Destination: f.Destination, APPID: f.APPID, VLAN: f.VLAN, MinTime: g.minTime, MaxTime: g.maxTime}
 	for _, a := range g.set.Variables {
 		i.Members = append(i.Members, a.Name)
+		a.Selection = a.Selection.Clone()
+		i.Accesses = append(i.Accesses, a)
 	}
 	return i
 }
@@ -57,7 +62,7 @@ func (g *Stream) Layout() goose.Layout {
 		} else if relative, ok := strings.CutPrefix(name.Domain, g.ied.name); ok {
 			domain = "relative:" + relative
 		}
-		layout.Members = append(layout.Members, goose.Member{Name: name.Item, Domain: domain, Type: data.CloneType(g.types[i])})
+		layout.Members = append(layout.Members, goose.Member{Name: name.Item, Domain: domain, Type: data.CloneType(g.types[i]), Selection: variable.Selection.Clone()})
 	}
 	return layout
 }
@@ -68,6 +73,9 @@ func (g *Stream) Values(ctx context.Context) ([]mms.Value, error) {
 	defer g.ied.mu.RUnlock()
 	return g.values(ctx)
 }
+
+// Streams returns the modeled GOOSE streams sorted by reference. Treat their engineering
+// configuration as immutable.
 func (d *IED) Streams() []*Stream {
 	out := make([]*Stream, 0, len(d.streams))
 	for _, g := range d.streams {
@@ -76,6 +84,9 @@ func (d *IED) Streams() []*Stream {
 	sort.Slice(out, func(i, j int) bool { return out[i].name.String() < out[j].name.String() })
 	return out
 }
+
+// Stream resolves a GSEControl by logical-device instance and control-block name, returning an
+// error when absent.
 func (d *IED) Stream(ld, cb string) (*Stream, error) {
 	g := d.streams[mms.DomainName(d.domains[ld], "LLN0$GO$"+cb)]
 	if g == nil {
@@ -83,6 +94,9 @@ func (d *IED) Stream(ld, cb string) (*Stream, error) {
 	}
 	return g, nil
 }
+
+// NewSubscriber creates a subscriber pinned to this stream's address, revision and selected
+// member types.
 func (g *Stream) NewSubscriber() (*goose.Subscriber, error) {
 	f := g.frame
 	c := goose.SubscriptionConfig{Destination: f.Destination, APPID: f.APPID, GoCBRef: f.PDU.GoCBRef,
@@ -199,10 +213,12 @@ func (g *Stream) Run(ctx context.Context, link goose.FrameIO, source [6]byte) er
 // Input identifies the dataset member selected by a receiver's ExtRef.intAddr.
 // Index is its zero-based allData slot, even when it contains a whole FCD.
 type Input struct {
-	Stream *Stream
-	Index  int
-	Name   mms.ObjectName
-	path   []int
+	Stream   *Stream
+	Index    int
+	Name     mms.ObjectName
+	Variable mms.VariableAccess
+	path     []int
+	quality  *goose.Field
 }
 
 // Input resolves one unambiguous subscriber-local address against this source
@@ -222,48 +238,133 @@ func (d *IED) Input(receiver, ap, intAddr string) (Input, error) {
 		return Input{}, fmt.Errorf("scl: expected one ExtRef %s/%s/%s, found %d", receiver, ap, intAddr, len(refs))
 	}
 	x := refs[0]
+	return d.ResolveGOOSEInput(x)
+}
+
+// ResolveGOOSEInput resolves a scoped ExtRef returned by System.Inputs. It
+// avoids the optional, application-defined intAddr as a global lookup key.
+func (d *IED) ResolveGOOSEInput(x InputReference) (Input, error) {
 	if x.SourceIED != d.name || x.ControlLN != "LLN0" || x.DataPath == "" {
-		return Input{}, fmt.Errorf("scl: %s requires an explicit GOOSE source bound to %s/LLN0", intAddr, d.name)
+		return Input{}, fmt.Errorf("scl: %s requires an explicit GOOSE source bound to %s/LLN0", x.Key(), d.name)
 	}
 	g, err := d.Stream(x.ControlLD, x.ControlBlock)
 	if err != nil {
 		return Input{}, err
 	}
 	var matches []Input
-	for i, a := range g.set.Variables {
-		member := point(a.Name)
-		want, err := d.Lookup(x.DataLD, x.DataLN, member.FC, x.DataPath)
-		if err != nil || want.Domain != a.Name.Domain {
+	for _, access := range g.set.Variables {
+		fc := point(access.Name).FC
+		wanted, e := d.memberAccess(memberXML{LD: x.DataLD, Class: x.DataLN, FC: fc}, x.DataPath)
+		if e != nil {
 			continue
 		}
-		in := Input{Stream: g, Index: i, Name: want}
-		if want != a.Name {
-			suffix, ok := strings.CutPrefix(want.Item, a.Name.Item+"$")
+		for _, candidate := range g.inputsForAccess(wanted) {
+			duplicate := false
+			for _, previous := range matches {
+				duplicate = duplicate || previous.Index == candidate.Index
+			}
+			if !duplicate {
+				matches = append(matches, candidate)
+			}
+		}
+	}
+	if len(matches) != 1 {
+		return Input{}, fmt.Errorf("scl: %s resolves to %d members in %s", x.Key(), len(matches), g.set.Name)
+	}
+	in := matches[0]
+	// Find the nearest q carried by this same GOOSE dataset. Absence stays
+	// explicit; another dataset or another array element cannot supply it.
+	parent := x.DataPath
+	for strings.Contains(parent, ".") {
+		parent = parent[:strings.LastIndexByte(parent, '.')]
+		q, e := d.memberAccess(memberXML{LD: x.DataLD, Class: x.DataLN, FC: point(in.Variable.Name).FC}, parent+".q")
+		if e != nil {
+			continue
+		}
+		fields := g.inputsForAccess(q)
+		if len(fields) == 1 {
+			field := fields[0]
+			typ, e := mms.SelectedType(d.types[q.Name], q.Selection)
+			if e == nil && typ.Kind == mms.KindBitString && typ.Length == 13 {
+				in.quality = &goose.Field{Slot: field.Index, Path: field.path, Type: typ}
+				break
+			}
+		}
+	}
+	return in, nil
+}
+
+// selectionPathText translates a validated alternate access into data's typed
+// component path, retaining array indices and nested component order.
+func selectionPathText(selection mms.Selection) (string, error) {
+	steps, err := selection.Steps()
+	if err != nil {
+		return "", err
+	}
+	var path []string
+	for _, step := range steps {
+		if step.Index != nil {
+			path = append(path, fmt.Sprint(*step.Index))
+		} else {
+			path = append(path, strings.ReplaceAll(step.Component, "$", "."))
+		}
+	}
+	return strings.Join(path, "."), nil
+}
+func (g *Stream) inputsForAccess(want mms.VariableAccess) []Input {
+	var matches []Input
+	for i, member := range g.set.Variables {
+		if want.Name.Domain != member.Name.Domain {
+			continue
+		}
+		prefix := ""
+		if want.Name != member.Name {
+			suffix, ok := strings.CutPrefix(want.Name.Item, member.Name.Item+"$")
 			if !ok {
 				continue
 			}
-			t := g.types[i]
-			for _, part := range strings.Split(suffix, "$") {
-				found := false
-				for j, c := range t.Components {
-					if c.Name == part {
-						in.path = append(in.path, j)
-						t = c.Type
-						found = true
-						break
-					}
-				}
-				if !found {
-					return Input{}, fmt.Errorf("scl: unresolved FCD member %s", want)
-				}
-			}
+			prefix = strings.ReplaceAll(suffix, "$", ".")
 		}
-		matches = append(matches, in)
+		selected, err := selectionPathText(want.Selection)
+		if err != nil {
+			continue
+		}
+		if prefix != "" && selected != "" {
+			prefix += "."
+		}
+		_, wantPath, err := data.ResolveComponent(g.ied.types[member.Name], prefix+selected)
+		if err != nil {
+			continue
+		}
+		selected, err = selectionPathText(member.Selection)
+		if err != nil {
+			continue
+		}
+		_, memberPath, err := data.ResolveComponent(g.ied.types[member.Name], selected)
+		if err != nil || len(wantPath) < len(memberPath) {
+			continue
+		}
+		same := true
+		for j, index := range memberPath {
+			same = same && wantPath[j] == index
+		}
+		if same {
+			matches = append(matches, Input{Stream: g, Index: i, Name: want.Name, Variable: want, path: append([]int(nil), wantPath[len(memberPath):]...)})
+		}
 	}
-	if len(matches) != 1 {
-		return Input{}, fmt.Errorf("scl: %s resolves to %d members in %s", intAddr, len(matches), g.set.Name)
+	return matches
+}
+
+// Quality returns q from this accepted frame when the dataset carries it.
+func (in Input) Quality(event goose.Event) (mms.Value, bool, error) {
+	if in.quality == nil {
+		return mms.Value{}, false, nil
 	}
-	return matches[0], nil
+	if _, err := in.Value(event); err != nil {
+		return mms.Value{}, true, err
+	}
+	value, err := in.quality.Read(event.Frame.PDU.Values)
+	return value, true, err
 }
 
 // Value extracts the subscribed attribute from an accepted subscriber event.

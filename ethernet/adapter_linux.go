@@ -21,6 +21,7 @@ const (
 	tpStatusVLANTPIDValid = 1 << 6
 )
 
+// Interfaces lists available packet adapters, or returns a platform/driver error.
 func Interfaces() ([]Interface, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {

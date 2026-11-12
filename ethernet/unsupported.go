@@ -3,5 +3,6 @@
 
 package ethernet
 
+// Interfaces lists available packet adapters, or returns a platform/driver error.
 func Interfaces() ([]Interface, error)               { return nil, ErrUnsupported }
 func openBackend(Config) (backend, Interface, error) { return nil, Interface{}, ErrUnsupported }

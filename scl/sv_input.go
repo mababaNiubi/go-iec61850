@@ -8,6 +8,8 @@ import (
 	"github.com/mababaNiubi/go-iec61850/sv"
 )
 
+// SampledInput resolves an SMV ExtRef to its source profile, scalar field and optional related
+// quality field.
 type SampledInput struct {
 	Profile sv.Profile
 	Field   sv.Field
@@ -32,6 +34,12 @@ func (s *System) SVInput(receiver, ap, intAddr string) (SampledInput, error) {
 		return SampledInput{}, fmt.Errorf("scl: expected one SMV ExtRef %s/%s/%s", receiver, ap, intAddr)
 	}
 	x := matches[0]
+	return s.ResolveSVInput(x)
+}
+
+// ResolveSVInput accepts an ExtRef with its receiver-local identity retained.
+func (s *System) ResolveSVInput(x InputReference) (SampledInput, error) {
+	intAddr := x.IntAddr
 	var results []SampledInput
 	for _, point := range s.AccessPoints() {
 		if point.IED != x.SourceIED || !point.HasServer {

@@ -39,6 +39,7 @@ type Config struct {
 	MaxFrameSize int
 }
 
+// Interface describes a packet adapter and its source MAC and capability flags.
 type Interface struct {
 	Name, Description string
 	MAC               [6]byte
@@ -85,6 +86,8 @@ func normalize(c Config) (Config, error) {
 	return c, nil
 }
 
+// Open opens the explicitly named packet adapter. The caller owns Close. Physical access
+// requires Linux raw-socket permissions or a Windows Npcap installation.
 func Open(cfg Config) (*Conn, error) {
 	cfg, err := normalize(cfg)
 	if err != nil {
@@ -97,9 +100,13 @@ func Open(cfg Config) (*Conn, error) {
 	return &Conn{driver: driver, iface: iface, cfg: cfg, done: make(chan struct{}), readToken: make(chan struct{}, 1)}, nil
 }
 
+// Interface returns metadata for the selected adapter.
 func (c *Conn) Interface() Interface { return c.iface }
-func (c *Conn) MAC() [6]byte         { return c.iface.MAC }
 
+// MAC returns the selected adapter source MAC by value.
+func (c *Conn) MAC() [6]byte { return c.iface.MAC }
+
+// Close closes the native adapter and unblocks polling reads. It is idempotent.
 func (c *Conn) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -111,6 +118,8 @@ func (c *Conn) Close() error {
 	return c.driver.close()
 }
 
+// ReadFrame waits for the next matching Ethernet frame without FCS. It returns owned bytes
+// and honors cancellation while polling the adapter.
 func (c *Conn) ReadFrame(ctx context.Context) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -159,6 +168,8 @@ func (c *Conn) ReadFrame(ctx context.Context) ([]byte, error) {
 	}
 }
 
+// WriteFrame validates and injects a complete Ethernet frame without FCS. Cancellation is
+// checked before native injection; an entered injection cannot be interrupted.
 func (c *Conn) WriteFrame(ctx context.Context, frame []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err

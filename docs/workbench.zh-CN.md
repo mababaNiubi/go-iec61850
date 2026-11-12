@@ -102,6 +102,22 @@ flowchart LR
 | `GET /api/connections/{id}/domains`、`names?domain=…`、`value?domain=…&item=…` | 远端目录和读值 |
 | `POST /api/connections/{id}/value` | 写入 `{"Domain":"…","Item":"…","Value":42}` |
 | `GET /api/events` | 通过 SSE 接收有界事件日志 |
+| `GET /api/models/{id}/project` | 子网、ServerAt、一次设备及支持范围内的语义诊断 |
+| `POST /api/models/compare` | 对比 `{"Before":"模型 id","After":"模型 id","IED":"BayIED","AP":"S1"}` |
+| `GET /api/models/{id}/inputs?ied=BayIED&ap=S1` | 按作用域查询 ExtRef，支持纯客户端接入点 |
+| `GET /api/connections/{id}/discover?domain=可选LD` | 无 SCL 在线发现类型、数据集、RCB 和 SGCB |
+| `POST /api/connections/{id}/reports` | 订阅：`{"Domain":"BayIEDCTRL","Item":"LLN0$BR$history01","Options":{"Buffer":64,"GI":false}}` |
+| `DELETE /api/connections/{id}/reports?domain=BayIEDCTRL&item=LLN0%24BR%24history01` | 停止指定报告块订阅 |
+| `POST /api/connections/{id}/snapshot` | 现值读取：`{"Domain":"BayIEDCTRL","Item":"LLN0$dsEvents"}`，数值以 `confirmed-read` 来源写入 report-history |
+| `GET /api/connections/{id}/report-history?after=0` | 读取有界结构化历史；after 是本地记录序号，不是 BRCB EntryID |
+| `POST /api/connections/{id}/controls` | `{"Reference":"BayIEDCTRL/XCBR1.Pos","Action":"operate","Value":true,"Options":{"InterlockCheck":true}}`；Action 也支持 select、cancel |
+| `GET /api/connections/{id}/settings?domain=BayIEDCTRL` | 读取指定 Domain 的 NumOfSG、ActSG、EditSG |
+| `POST /api/connections/{id}/settings` | 编辑确认：`{"Domain":"BayIEDCTRL","Group":2,"Values":{"PTOC1.StrVal.setMag.f":12},"Activate":false}`；激活已有组用 ActivateOnly=true，无需 Values |
+
+控制和定值操作会在正常 JSON 响应中保留部分成功证据；即使 HTTP 200，也要检查 `result` 和 `error`。Acknowledged 不代表物理反馈。操作已保存的选择时复用选择阶段的值和选项。表中路径只是示例，提交前应发现或检查目标的真实声明。
+
+断线续传的 `Options.ResumeEntryID` 在 JSON 中是 base64 字节串，`"AAAAAAAAAAA="` 表示从保留历史起点读取；界面接收十六进制并转换。不能与 PurgeBuffer 同用。每个连接最多保留 500 条记录，关闭连接或工作台后丢失。`Oldest`、`Last`、`gap` 描述本地保留范围，与服务端 EntryID、报告序号不同。现值读取会新增记录，但不推进 BRCB 游标。
+
 
 ## 构建和底层诊断
 
@@ -116,3 +132,12 @@ go run ./cmd/iedlab protocol goose-subscriber -input-frame _local/frames/goose.b
 协议生命周期已移入公开的 [simulator 包](../simulator/runtime.go)，客户端控制使用公开的 [ied 包](api/ied.zh-CN.md)。其他程序可以直接导入，无需引用 `internal/workbench`。
 
 点击“整站示例 → 启动整站”，多个 IED 会共享 GOOSE/SV 软件总线，输入面板显示 ExtRef 值。MU 默认发布可编辑的当前模型值，声明为未同步；设备计算逻辑需显式实现。CLI：`iedlab simulate -station -file station.scd`。参见[整站接入](api/engineering.zh-CN.md)。
+
+## 在线服务和工程网络
+
+MMS 客户端连接后选择“发现在线服务”，无需 SCL 即可使用报告、控制和定值组。
+报告卡支持订阅、总召、续传、停止及独立现值读取。结构化记录显示来源、EntryID、
+序号、分段、缺口和值，JSON 导出保留本会话最近 500 条记录，数据存于进程内。
+控制过程保留选择、接受和执行终结证据。定值可编辑确认，并明确激活已有组。
+工程页显示子网与 ServerAt 接入端口，可比较已导入版本的同一 IED/AP。
+整站输入卡显示品质、同步标志、接收时间、网络、有效状态和超时。

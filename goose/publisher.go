@@ -23,6 +23,8 @@ type FrameIO interface {
 
 var ErrRunning = errors.New("goose: already running")
 
+// PublisherConfig supplies the initial frame and optional member types. MinTime defaults to
+// 4ms, MaxTime to 1s, TALFactor to 2; Clock defaults to the system clock.
 type PublisherConfig struct {
 	Frame   Frame
 	Types   []data.TypeSpec
@@ -140,8 +142,9 @@ func sameLayout(a, b data.Value) bool {
 	return true
 }
 
-// NewPublisher 创建有状态发布者，复制初始 Frame 和类型约束。link 由调用方关闭；
-// 真实网卡的 Source 应取 conn.MAC()，同一数据集两端的 APPID/引用/顺序应一致。
+// NewPublisher copies the initial frame and type constraints. The caller owns link.Close.
+// Use the physical adapter MAC for Source; APPID, references and member order must match
+// the receiver.
 func NewPublisher(link FrameIO, cfg PublisherConfig) (*Publisher, error) {
 	if link == nil {
 		return nil, fmt.Errorf("goose: nil frame link")
@@ -229,8 +232,11 @@ func (p *Publisher) Update(values []data.Value) (bool, error) {
 	return true, nil
 }
 
+// Snapshot returns an independent copy of the current publication frame, including its counters.
 func (p *Publisher) Snapshot() Frame { p.mu.Lock(); defer p.mu.Unlock(); return p.frame.Clone() }
-func (p *Publisher) Sent() uint64    { p.mu.Lock(); defer p.mu.Unlock(); return p.sent }
+
+// Sent returns the number of successfully transmitted frames, including retransmissions.
+func (p *Publisher) Sent() uint64 { p.mu.Lock(); defer p.mu.Unlock(); return p.sent }
 
 func (p *Publisher) emit(ctx context.Context, interval time.Duration, lastState uint32) (uint32, time.Duration, error) {
 	p.mu.Lock()

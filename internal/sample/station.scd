@@ -32,6 +32,7 @@
       <ConnectedAP iedName="StationHMI" apName="S1"/>
     </SubNetwork>
     <SubNetwork name="ProcessBus" type="8-MMS">
+      <ConnectedAP iedName="BayIED" apName="P1"/>
       <ConnectedAP iedName="MUA" apName="AP1">
         <SMV ldInst="LD0" cbName="MSVCB01">
           <Address>
@@ -92,6 +93,7 @@
         </LDevice>
       </Server>
     </AccessPoint>
+    <AccessPoint name="P1"><ServerAt apName="S1"/></AccessPoint>
   </IED>
   <IED name="StationHMI">
     <AccessPoint name="S1">

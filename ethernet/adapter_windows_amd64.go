@@ -138,6 +138,7 @@ func adapterMACs() map[string][6]byte {
 	return result
 }
 
+// Interfaces lists available packet adapters, or returns a platform/driver error.
 func Interfaces() ([]Interface, error) {
 	api, err := loadPCAP()
 	if err != nil {

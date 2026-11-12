@@ -10,6 +10,8 @@ import (
 	"sync"
 )
 
+// ObjectClass selects named variables, named variable lists or logical-device domains for
+// directory browsing.
 type ObjectClass uint8
 
 const (
@@ -28,6 +30,36 @@ type Store interface {
 	Write(context.Context, VariableAccess, Value) error
 }
 
+// BatchReader is an optional Store capability. ReadBatch returns exactly one
+// result per access, in request order, from one acquisition image. A failed
+// member does not suppress its siblings. Store decorators should forward this
+// capability when their underlying store supports it.
+type BatchReader interface {
+	ReadBatch(context.Context, []VariableAccess) []ReadResult
+}
+
+// ReadBatch uses a store's coherent batch capability when available. The
+// fallback preserves existing Store implementations but cannot promise that
+// separate Read calls observe the same acquisition.
+func ReadBatch(ctx context.Context, store Store, accesses []VariableAccess) []ReadResult {
+	// Use the concrete Model here. Adding an exported batch method to Model
+	// would silently opt existing decorators embedding *Model into batching,
+	// bypassing their overridden Read methods.
+	if model, ok := store.(*Model); ok {
+		return model.readBatch(ctx, accesses)
+	}
+	if reader, ok := store.(BatchReader); ok {
+		return reader.ReadBatch(ctx, accesses)
+	}
+	results := make([]ReadResult, len(accesses))
+	for i, access := range accesses {
+		results[i].Value, results[i].Error = store.Read(ctx, access)
+	}
+	return results
+}
+
+// Variable declares a named typed initial value and its remote-write permission. Local
+// acquisition uses Model.SetValues.
 type Variable struct {
 	Name     ObjectName
 	Type     TypeSpec
@@ -43,9 +75,13 @@ type Model struct {
 	domains   map[string]struct{}
 }
 
+// NewModel creates an empty concurrency-safe in-memory Store. Add declarations before serving
+// clients.
 func NewModel() *Model {
 	return &Model{variables: make(map[ObjectName]Variable), domains: make(map[string]struct{})}
 }
+
+// AddDomain registers an empty MMS domain after validating its identifier.
 func (m *Model) AddDomain(name string) error {
 	if !validIdentifier(name) {
 		return fmt.Errorf("mms: invalid domain name")
@@ -58,6 +94,9 @@ func (m *Model) AddDomain(name string) error {
 	m.domains[name] = struct{}{}
 	return nil
 }
+
+// Add validates and registers a variable. Duplicate names or incompatible initial values
+// return an error.
 func (m *Model) Add(v Variable) error {
 	if err := v.Name.validate(); err != nil {
 		return err
@@ -93,6 +132,8 @@ func (m *Model) Add(v Variable) error {
 	}
 	return nil
 }
+
+// Domains returns registered domain names in sorted order and honors ctx cancellation.
 func (m *Model) Domains(ctx context.Context) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -106,6 +147,9 @@ func (m *Model) Domains(ctx context.Context) ([]string, error) {
 	sort.Strings(out)
 	return out, nil
 }
+
+// Names returns names in the requested MMS scope and domain. The server handles wire
+// pagination.
 func (m *Model) Names(ctx context.Context, scope Scope, domain string) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -215,6 +259,9 @@ func selected(v Variable, path []int, sel Selection) (Value, TypeSpec, []int, er
 	path = append(path, indices...)
 	return value, t, path, nil
 }
+
+// Type resolves a named variable or structure member and returns an independent type
+// declaration.
 func (m *Model) Type(ctx context.Context, n ObjectName) (TypeSpec, error) {
 	if err := ctx.Err(); err != nil {
 		return TypeSpec{}, err
@@ -228,12 +275,32 @@ func (m *Model) Type(ctx context.Context, n ObjectName) (TypeSpec, error) {
 	_, t, _, err := selected(v, path, Selection{})
 	return cloneType(t), err
 }
+
+// Read obtains a typed immutable value, applying any requested component or array selection.
 func (m *Model) Read(ctx context.Context, a VariableAccess) (Value, error) {
 	if err := ctx.Err(); err != nil {
 		return Value{}, err
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	return m.readLocked(a)
+}
+
+func (m *Model) readBatch(ctx context.Context, accesses []VariableAccess) []ReadResult {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	results := make([]ReadResult, len(accesses))
+	for i, access := range accesses {
+		if err := ctx.Err(); err != nil {
+			results[i].Error = err
+			continue
+		}
+		results[i].Value, results[i].Error = m.readLocked(access)
+	}
+	return results
+}
+
+func (m *Model) readLocked(a VariableAccess) (Value, error) {
 	v, path, err := m.findLocked(a.Name)
 	if err != nil {
 		return Value{}, err
@@ -252,6 +319,9 @@ func replaceValue(base Value, path []int, value Value) Value {
 	}
 	return Structure(items...)
 }
+
+// Write validates remote access permission and selected type before atomically changing the
+// variable.
 func (m *Model) Write(ctx context.Context, a VariableAccess, value Value) error {
 	if err := ctx.Err(); err != nil {
 		return err

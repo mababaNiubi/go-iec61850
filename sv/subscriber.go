@@ -17,6 +17,7 @@ var (
 	ErrEventOverflow = errors.New("sv: event queue overflow")
 )
 
+// EventKind identifies sample reception, gaps, expiry or recovery.
 type EventKind uint8
 
 const (
@@ -26,6 +27,7 @@ const (
 	Recovered
 )
 
+// String returns a readable event kind, or unknown for an invalid value.
 func (k EventKind) String() string {
 	switch k {
 	case SampleReceived:
@@ -40,6 +42,8 @@ func (k EventKind) String() string {
 	return "unknown"
 }
 
+// Event carries an accepted ASDU or expiry notification. ReceivedAt is local receive time
+// and ValidUntil is the local usability deadline.
 type Event struct {
 	Kind                   EventKind
 	ASDU                   ASDU
@@ -48,6 +52,8 @@ type Event struct {
 	MissingSamples         uint32
 }
 
+// SubscriptionConfig pins stream identity and local acceptance policy. EventBuffer zero
+// selects 256 (maximum 65536); Clock defaults to the system clock.
 type SubscriptionConfig struct {
 	Destination     [6]byte
 	Source          *[6]byte
@@ -66,7 +72,12 @@ type SubscriptionConfig struct {
 	Clock                    Clock
 	EventBuffer              int
 }
+
+// SubscriberStats is a concurrency-safe snapshot of accepted, filtered, rejected and lifetime counters.
 type SubscriberStats struct{ Accepted, Frames, Rejected, Filtered, Stale, GapEvents, MissingSamples, Expired, Recovered uint64 }
+
+// Subscriber validates entire packets before committing samples, counters or receive
+// lifetime. Duplicate/old samples do not refresh its timeout.
 type Subscriber struct {
 	cfg             SubscriptionConfig
 	mu              sync.Mutex
@@ -95,8 +106,9 @@ func referenceOK(s string, optional bool) bool {
 	return true
 }
 
-// NewSubscriber 创建采样流过滤与计数检查对象。Timeout 是本地策略，不是线上 TAL；
-// 默认拒绝 SampleSync=0，需要由应用显式设置 AllowUnsynchronized 接受软件采样。
+// NewSubscriber creates stream filters and counter validation. Timeout is a local receive
+// policy, not a wire TAL. SampleSync zero is rejected unless AllowUnsynchronized explicitly
+// permits it.
 func NewSubscriber(cfg SubscriptionConfig) (*Subscriber, error) {
 	if !multicastDestination(cfg.Destination) || !referenceOK(cfg.SVID, false) || !referenceOK(cfg.DataSet, true) {
 		return nil, fmt.Errorf("sv: invalid subscription filter")
@@ -255,19 +267,35 @@ func (s *Subscriber) expireLocked(now time.Time) (Event, bool) {
 	}
 	return Event{}, false
 }
+
+// CheckTimeout transitions an overdue accepted stream to expired once and returns its event
+// with true. It does not enqueue the event; poll it when using Receiver.
 func (s *Subscriber) CheckTimeout() (Event, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.expireLocked(s.cfg.Clock.Now())
 }
+
+// Snapshot returns an independent last ASDU and whether it is currently valid. The last
+// data can remain present after expiry.
 func (s *Subscriber) Snapshot() (ASDU, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.last.Clone(), s.valid && s.cfg.Clock.Now().Before(s.deadline)
 }
+
+// Stats returns a locked copy of the stream counters.
 func (s *Subscriber) Stats() SubscriberStats { s.mu.Lock(); defer s.mu.Unlock(); return s.stats }
-func (s *Subscriber) LastError() error       { s.mu.Lock(); defer s.mu.Unlock(); return s.lastError }
-func (s *Subscriber) Events() <-chan Event   { return s.events }
+
+// LastError returns the most recently recorded rejection, which may remain set after later
+// valid traffic.
+func (s *Subscriber) LastError() error { s.mu.Lock(); defer s.mu.Unlock(); return s.lastError }
+
+// Events returns the bounded queue populated only by Subscriber.Run. Run
+// returns ErrEventOverflow for a slow consumer; this channel is not closed by
+// Run. Select on the owning context/Run result and do not range until closure.
+// Receiver delivers callbacks instead of populating this queue.
+func (s *Subscriber) Events() <-chan Event { return s.events }
 func (s *Subscriber) emit(ctx context.Context, e Event) error {
 	select {
 	case s.events <- e:

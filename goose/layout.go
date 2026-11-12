@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/mababaNiubi/go-iec61850/data"
+	"github.com/mababaNiubi/go-iec61850/mms"
 )
 
 // Member describes an ordered FCDA. Domain identifies its logical-device
@@ -14,7 +15,13 @@ import (
 type Member struct {
 	Name, Domain string
 	Type         data.TypeSpec
+	// Selection retains the complete FCDA alternate-access path. The selected
+	// Type alone cannot distinguish two equally typed array channels.
+	Selection mms.Selection
 }
+
+// Layout describes FCDA members in allData order, preserving types, domain relationships
+// and alternate-access selections.
 type Layout struct{ Members []Member }
 
 // Field is an allData slot followed by an ordered structure/array path.
@@ -25,6 +32,8 @@ type Field struct {
 	Type data.TypeSpec
 }
 
+// Field resolves an FCDA by its item name or zero-based decimal slot and a relative
+// component path. Ambiguous names require a slot.
 func (l Layout) Field(memberRef, path string) (Field, error) {
 	slot, err := strconv.Atoi(memberRef)
 	if err != nil {
@@ -44,6 +53,8 @@ func (l Layout) Field(memberRef, path string) (Field, error) {
 	typ, indices, err := data.ResolveComponent(l.Members[slot].Type, path)
 	return Field{Slot: slot, Path: indices, Type: typ}, err
 }
+
+// Read extracts and validates this field from a complete allData batch without mutating the input.
 func (f Field) Read(values []data.Value) (data.Value, error) {
 	if f.Slot < 0 || f.Slot >= len(values) {
 		return data.Value{}, fmt.Errorf("goose: short allData")
@@ -71,6 +82,9 @@ func (f Field) Set(values []data.Value, value data.Value) error {
 	values[f.Slot] = updated
 	return nil
 }
+
+// CheckCompatible compares ordered member names, domains, alternate-access paths and full
+// type declarations. Rebuild point mappings when it returns an error.
 func (l Layout) CheckCompatible(other Layout) error {
 	if len(l.Members) != len(other.Members) {
 		return fmt.Errorf("goose: dataset member count differs")
@@ -85,7 +99,7 @@ func (l Layout) CheckCompatible(other Layout) error {
 		if err != nil {
 			return err
 		}
-		if member.Name != target.Name || member.Domain != target.Domain || !bytes.Equal(a, b) {
+		if member.Name != target.Name || member.Domain != target.Domain || !member.Selection.Equal(target.Selection) || !bytes.Equal(a, b) {
 			return fmt.Errorf("goose: dataset member %d differs", i)
 		}
 	}

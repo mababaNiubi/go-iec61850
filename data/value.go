@@ -34,6 +34,7 @@ const (
 	KindUTC           Kind = 17
 )
 
+// String returns the MMS Data kind label, or invalid for unsupported kinds.
 func (k Kind) String() string {
 	switch k {
 	case KindArray:
@@ -78,17 +79,33 @@ type Value struct {
 	bitLength int
 }
 
-func Boolean(v bool) Value         { return Value{kind: KindBoolean, boolean: v} }
-func Integer(v int64) Value        { return Value{kind: KindInteger, integer: v} }
-func Unsigned(v uint64) Value      { return Value{kind: KindUnsigned, unsigned: v} }
+// Boolean constructs an MMS boolean.
+func Boolean(v bool) Value { return Value{kind: KindBoolean, boolean: v} }
+
+// Integer constructs a signed MMS integer. Validate against the remote declared width before writing.
+func Integer(v int64) Value { return Value{kind: KindInteger, integer: v} }
+
+// Unsigned constructs an unsigned MMS integer without narrowing it to a signed Go value.
+func Unsigned(v uint64) Value { return Value{kind: KindUnsigned, unsigned: v} }
+
+// VisibleString constructs an MMS visible string. Encoding validates its supported character set.
 func VisibleString(v string) Value { return Value{kind: KindVisibleString, raw: []byte(v)} }
-func MMSString(v string) Value     { return Value{kind: KindMMSString, raw: []byte(v)} }
-func OctetString(v []byte) Value   { return Value{kind: KindOctetString, raw: bytes.Clone(v)} }
-func Array(v ...Value) Value       { return Value{kind: KindArray, elements: append([]Value(nil), v...)} }
+
+// MMSString constructs a UTF-8 MMS string. Encoding rejects invalid UTF-8.
+func MMSString(v string) Value { return Value{kind: KindMMSString, raw: []byte(v)} }
+
+// OctetString copies arbitrary octets into an immutable MMS value.
+func OctetString(v []byte) Value { return Value{kind: KindOctetString, raw: bytes.Clone(v)} }
+
+// Array copies an ordered list of immutable values into an MMS array.
+func Array(v ...Value) Value { return Value{kind: KindArray, elements: append([]Value(nil), v...)} }
+
+// Structure copies ordered member values. Names and declarations are retained separately in TypeSpec.
 func Structure(v ...Value) Value {
 	return Value{kind: KindStructure, elements: append([]Value(nil), v...)}
 }
 
+// Float32 constructs a 32-bit MMS floating-point value, preserving its wire width.
 func Float32(v float32) Value {
 	raw := make([]byte, 5)
 	raw[0] = 8
@@ -96,6 +113,7 @@ func Float32(v float32) Value {
 	return Value{kind: KindFloat, raw: raw}
 }
 
+// Float64 constructs a 64-bit MMS floating-point value, preserving its wire width.
 func Float64(v float64) Value {
 	raw := make([]byte, 9)
 	raw[0] = 11
@@ -147,6 +165,7 @@ func UTC(t time.Time) Value {
 // UTCFromBytes retains fraction and time-quality bits without normalization.
 func UTCFromBytes(v [8]byte) Value { return Value{kind: KindUTC, raw: bytes.Clone(v[:])} }
 
+// Kind returns the MMS Data choice; the zero Value has KindInvalid.
 func (v Value) Kind() Kind { return v.kind }
 
 // Depth counts a scalar or an empty composite as one level. Values exceeding
@@ -176,24 +195,32 @@ func (v Value) wrongKind(want string) error {
 	return fmt.Errorf("mms: %s value cannot be read as %s", v.kind, want)
 }
 
+// Bool returns a boolean or an error when the value has another kind.
 func (v Value) Bool() (bool, error) {
 	if v.kind != KindBoolean {
 		return false, v.wrongKind("boolean")
 	}
 	return v.boolean, nil
 }
+
+// Int returns a signed integer or an error for other kinds, including unsigned integers.
 func (v Value) Int() (int64, error) {
 	if v.kind != KindInteger {
 		return 0, v.wrongKind("integer")
 	}
 	return v.integer, nil
 }
+
+// Uint returns an unsigned integer or an error for other kinds, including signed integers.
 func (v Value) Uint() (uint64, error) {
 	if v.kind != KindUnsigned {
 		return 0, v.wrongKind("unsigned")
 	}
 	return v.unsigned, nil
 }
+
+// Float decodes a supported 32- or 64-bit MMS float into float64 without changing the
+// stored wire value.
 func (v Value) Float() (float64, error) {
 	if v.kind != KindFloat {
 		return 0, v.wrongKind("float")
@@ -206,6 +233,8 @@ func (v Value) Float() (float64, error) {
 	}
 	return 0, errors.New("mms: unsupported floating-point format")
 }
+
+// StringValue returns visible-string or MMS-string text; other kinds return an error.
 func (v Value) StringValue() (string, error) {
 	if v.kind != KindVisibleString && v.kind != KindMMSString {
 		return "", v.wrongKind("string")
@@ -223,12 +252,16 @@ func (v Value) Bytes() ([]byte, error) {
 		return nil, v.wrongKind("bytes")
 	}
 }
+
+// Elements returns a copy of array or structure members in wire order. Scalar values return an error.
 func (v Value) Elements() ([]Value, error) {
 	if v.kind != KindArray && v.kind != KindStructure {
 		return nil, v.wrongKind("elements")
 	}
 	return append([]Value(nil), v.elements...), nil
 }
+
+// BitLength returns the significant bit count of a bit string; other kinds return an error.
 func (v Value) BitLength() (int, error) {
 	if v.kind != KindBitString {
 		return 0, v.wrongKind("bit length")
@@ -264,6 +297,8 @@ func (v Value) Equal(other Value) bool {
 	return true
 }
 
+// String returns a display representation for diagnostics. Use typed accessors
+// for application values and EncodeValue for wire encoding.
 func (v Value) String() string {
 	switch v.kind {
 	case KindBoolean:

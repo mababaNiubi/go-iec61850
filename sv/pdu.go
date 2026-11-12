@@ -25,6 +25,8 @@ const (
 	MaxReferenceSize = 129
 )
 
+// ASDU is one sample dataset with raw seqData bytes, counter, revision and
+// synchronization metadata. Optional pointer fields distinguish absence from zero.
 type ASDU struct {
 	SVID, DataSet string
 	SampleCount   uint16
@@ -38,6 +40,9 @@ type ASDU struct {
 	GMIdentity *[8]byte
 	Data       []byte
 }
+
+// PDU groups ASDUs carried in one SV Ethernet frame. Security is opaque wire
+// data only and is not authenticated by this package.
 type PDU struct {
 	ASDUs []ASDU
 	// Security is optional opaque wire data. It is not authenticated here.
@@ -45,6 +50,7 @@ type PDU struct {
 	Security []byte
 }
 
+// Clone copies the raw sample payload and optional metadata pointers.
 func (a ASDU) Clone() ASDU {
 	if a.RefreshTime != nil {
 		v := *a.RefreshTime
@@ -65,6 +71,8 @@ func (a ASDU) Clone() ASDU {
 	a.Data = bytes.Clone(a.Data)
 	return a
 }
+
+// Clone copies all ASDUs and optional opaque security bytes.
 func (p PDU) Clone() PDU {
 	if p.ASDUs != nil {
 		out := make([]ASDU, len(p.ASDUs))
@@ -144,6 +152,7 @@ func encodeASDU(a ASDU) ([]byte, error) {
 	return ber.Encode(0x30, fields...), nil
 }
 
+// EncodePDU validates and BER-encodes one SV application PDU without an Ethernet header.
 func EncodePDU(p PDU) ([]byte, error) {
 	if len(p.ASDUs) < 1 || len(p.ASDUs) > MaxASDUs {
 		return nil, malformed("ASDU count must be 1..%d", MaxASDUs)
@@ -258,6 +267,7 @@ func decodeASDU(e ber.Element) (ASDU, error) {
 	return a, nil
 }
 
+// DecodePDU parses a complete bounded SV application PDU, rejecting malformed or unsupported encodings.
 func DecodePDU(encoded []byte) (PDU, error) {
 	var p PDU
 	if len(encoded) > MaxAPDUSize {

@@ -85,6 +85,10 @@ func (r *Receiver) Process(frame Frame) {
 		}
 	}
 }
+
+// Run reads and dispatches frames until cancellation or a read error. It owns the read
+// loop, not the link. Callbacks run synchronously; poll CheckTimeout separately to detect
+// silent expiry.
 func (r *Receiver) Run(ctx context.Context, link FrameIO) error {
 	if link == nil || !r.running.CompareAndSwap(false, true) {
 		return fmt.Errorf("goose: receiver already running or missing link")

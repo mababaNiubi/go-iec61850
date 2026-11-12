@@ -2,7 +2,7 @@
 
 English | [简体中文](ied.zh-CN.md)
 
-Use `ied` when an application needs IEC 61850 control or URCB report semantics. Existing `mms` APIs remain available for raw MMS services. `simulator` runs an SCL-backed MMS/GOOSE device in your own process; it has no dependency on IEDLab or a web server. These public APIs are introduced in v1.2.0.
+Use `ied` for IEC 61850 controls, URCB/BRCB subscriptions, online discovery, current dataset reads and setting groups. `mms` provides raw MMS services. `simulator` runs an SCL-backed MMS/GOOSE/SV device or software station in your process without depending on IEDLab. Start with the [API task index and calling contracts](README.md); [engineering scenarios](engineering.md) cover model-driven reporting, history and station bindings.
 
 ## Connect, read and control
 
@@ -111,7 +111,7 @@ if err != nil { return err }
 model, err := system.Device("BayIED", "S1")
 if err != nil { return err }
 
-// Bind model.OnOperate handlers and initialize acquisition values here.
+// Bind model.OnControl handlers and initialize acquisition values here.
 runtime, err := simulator.Start(ctx, model, simulator.Options{
     Listen: "127.0.0.1:8102",
     GOOSE: simulator.GOOSEMemory,
@@ -121,7 +121,7 @@ defer runtime.Close()
 return runtime.Wait(ctx)
 ```
 
-Start owns TCP connections, its listener, frame links and protocol workers. `Address()` reports the actual address when using port zero. Parent cancellation or `Stop(ctx)` stops transport; the model remains available to update and restart. Local acquisitions use `model.Update`; hardware execution uses `model.OnOperate`. The modeled server currently supports ordinary direct SPC/DPC callbacks; the client's four control modes do not add those modes to a simulated server automatically.
+Start owns TCP connections, its listener, frame links and protocol workers. `Address()` reports the actual address when using port zero. Parent cancellation or `Stop(ctx)` stops transport; the model remains available to update and restart. Local acquisitions use `model.Update`; hardware execution uses `model.OnControl`. The modeled six-field SPC/DPC server supports selection and enhanced termination according to ctlModel; `OnOperate` retains the direct-normal interface. Other control types exposed by a remote IED can be used by the client according to their online declarations. See [control completion and model limits](engineering.md#configuration-changes-arrays-and-control-completion).
 
 Memory mode encodes, publishes and receives GOOSE Ethernet frames without a NIC. Ethernet mode requires `Interface` and uses its actual source MAC. `Observe` is an optional concurrent callback for events and errors. Return promptly and perform shutdown outside it. An optional Store decorator can trace real MMS accesses. `MemoryBus` connects independent runtimes, and `Options.SV` starts software sampled-value sources on that bus. See the [station example](../../examples/scd/station/README.md).
 

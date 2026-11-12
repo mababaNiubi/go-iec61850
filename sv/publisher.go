@@ -22,6 +22,9 @@ type FrameIO interface {
 
 var ErrRunning = errors.New("sv: already running")
 
+// PublisherConfig supplies the initial frame and software send interval. Interval zero
+// selects 1ms; CounterModulus zero selects 65536. It does not configure a hardware sampling
+// clock.
 type PublisherConfig struct {
 	Frame    Frame
 	Interval time.Duration
@@ -56,8 +59,9 @@ func multicastDestination(m [6]byte) bool {
 }
 func unicastSource(m [6]byte) bool { return m != ([6]byte{}) && m[0]&1 == 0 }
 
-// NewPublisher 使用明确的 ASDU.Data 布局创建采样发布者。成功发送后推进采样计数；
-// CounterModulus=0 选择65536。link 由调用方关闭，函数不采集硬件或建立同步。
+// NewPublisher copies an explicitly laid-out ASDU.Data frame. Successful sends advance
+// counters; CounterModulus zero selects 65536. The caller owns link.Close; sampling and
+// synchronization remain external.
 func NewPublisher(link FrameIO, cfg PublisherConfig) (*Publisher, error) {
 	if link == nil {
 		return nil, fmt.Errorf("sv: nil frame link")
@@ -125,8 +129,15 @@ func (p *Publisher) UpdateData(index int, raw []byte) error {
 	p.frame.PDU.ASDUs[index].Data = append([]byte(nil), raw...)
 	return nil
 }
-func (p *Publisher) Snapshot() Frame      { p.mu.Lock(); defer p.mu.Unlock(); return p.frame.Clone() }
-func (p *Publisher) Sent() uint64         { p.mu.Lock(); defer p.mu.Unlock(); return p.sent }
+
+// Snapshot returns an independent copy of the current frame and next sample counters.
+func (p *Publisher) Snapshot() Frame { p.mu.Lock(); defer p.mu.Unlock(); return p.frame.Clone() }
+
+// Sent returns the number of successfully transmitted Ethernet frames.
+func (p *Publisher) Sent() uint64 { p.mu.Lock(); defer p.mu.Unlock(); return p.sent }
+
+// SkippedSlots returns missed software schedule slots; skipped slots advance sample
+// counters without sending catch-up frames.
 func (p *Publisher) SkippedSlots() uint64 { p.mu.Lock(); defer p.mu.Unlock(); return p.skipped }
 
 func (p *Publisher) advanceLocked(slots uint64) {
@@ -169,6 +180,8 @@ func (p *Publisher) publish(ctx context.Context) error {
 	return nil
 }
 
+// Publish sends one current frame and advances sample counters on success. It returns
+// ErrRunning if Run or another Publish is active. The caller retains ownership of the link.
 func (p *Publisher) Publish(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err

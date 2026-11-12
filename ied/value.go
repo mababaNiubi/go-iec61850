@@ -1,8 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Package ied provides IEC 61850 client semantics above the raw MMS services.
-// It owns report dispatch on its MMS association. Values remain data.Value;
-// application-specific scalar, engineering-unit and quality policies stay with
-// the caller.
+// Package ied provides IEC 61850 control, reporting, setting-group and online
+// discovery clients above MMS. It requires no SCL file. Use ObjectName to map
+// a domain, functional constraint and relative IEC reference to an MMS name.
+//
+// Dial creates an owned association; defer Client.Close on success. Each
+// request uses its own context. SubscribeURCB and SubscribeBRCB use that context
+// for setup only; stop their lifetime with Stop, Close or Client.Close. Client
+// owns the raw MMS report channel; applications consume subscription Events.
+//
+// Discover inspects online declarations. ReadDataSet obtains current values;
+// snapshots have no EntryID and do not advance a retained report cursor. Save a
+// BRCB EntryID only after durably processing its complete Report. ControlResult
+// records protocol acceptance and termination, not physical device feedback.
+//
+// Values remain data.Value. Engineering-unit conversion, quality policies,
+// retry decisions and persistence belong to the application. See the runnable
+// examples in this package and the repository docs/api guides.
 package ied
 
 import (
@@ -82,9 +95,15 @@ func DecodeQuality(value data.Value) (Quality, error) {
 	return q, nil
 }
 
-func (q Quality) GoodValidity() bool     { return q&ValidityMask == 0 }
+// GoodValidity checks only the validity bits. Inspect old-data, test, substitution and other
+// flags for application suitability.
+func (q Quality) GoodValidity() bool { return q&ValidityMask == 0 }
+
+// Has reports whether any of the supplied quality flags are set.
 func (q Quality) Has(flags Quality) bool { return q&flags != 0 }
-func (q Quality) Valid() bool            { return q & ^Quality(0x1fff) == 0 }
+
+// Valid reports whether the quality contains only the defined 13 IEC bits.
+func (q Quality) Valid() bool { return q & ^Quality(0x1fff) == 0 }
 
 // MMSValue is also suitable for GOOSE allData; SV uses uint32(q) directly.
 func (q Quality) MMSValue() (data.Value, error) {

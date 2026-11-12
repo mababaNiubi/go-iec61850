@@ -9,6 +9,7 @@ import (
 	"github.com/mababaNiubi/go-iec61850/internal/ber"
 )
 
+// Selector is exactly one component name or array index in an ordered alternate-access path.
 type Selector struct {
 	Component string
 	Index     *uint32
@@ -44,6 +45,9 @@ func (s Selection) Steps() ([]Selector, error) {
 	}
 	return out, nil
 }
+
+// Clone returns an independent selection, including array-index pointers and nested path
+// storage.
 func (s Selection) Clone() Selection {
 	out := s
 	if s.Index != nil {
@@ -60,6 +64,8 @@ func (s Selection) Clone() Selection {
 	}
 	return out
 }
+
+// Equal compares validated selection meaning, including legacy and nested representations.
 func (s Selection) Equal(other Selection) bool {
 	a, err := s.Steps()
 	if err != nil {

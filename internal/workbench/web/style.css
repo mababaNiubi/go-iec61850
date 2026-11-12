@@ -1239,3 +1239,40 @@ dialog select {
   overflow-wrap: anywhere;
   color: #68788c;
 }
+
+.station-reading.invalid {
+  border-left: 3px solid #bf6547;
+  padding-left: 9px;
+}
+.service-toolbar, .service-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+}
+.service-toolbar select {
+  min-width: 200px;
+}
+.service-actions label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.service-actions input[type="number"] { width: 76px; }
+.stream-card select, .stream-card textarea { max-width: 100%; width: 100%; }
+.stream-card pre, .project-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow: auto;
+}
+.service-error { color: #a44329; overflow-wrap: anywhere; }
+.report-record {
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+  overflow-x: auto;
+}
+.report-record summary { cursor: pointer; overflow-wrap: anywhere; }
+.report-record td { overflow-wrap: anywhere; white-space: normal; }
+.project-panel { margin-top: 24px; }
