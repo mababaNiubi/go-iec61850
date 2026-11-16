@@ -2,13 +2,17 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Install the public SDK with Go 1.24 or later:
+New to the SDK? Follow the [API quick start](quickstart.md) for a complete program, local peer and expected output. This page indexes public packages, workflows and calling contracts.
+
+Install with Go 1.24 or later:
 
 ```sh
 go get github.com/mababaNiubi/go-iec61850@v1.4.0
 ```
 
 Import packages below `github.com/mababaNiubi/go-iec61850/`. Applications use public packages directly; IEDLab is an optional CLI/browser application built on the same APIs.
+
+## Packages
 
 | Package | Use it for |
 |---|---|
@@ -44,45 +48,13 @@ Import packages below `github.com/mababaNiubi/go-iec61850/`. Applications use pu
 | Define the SV payload byte layout | [SV: custom layout](sv.md#define-a-custom-sample-layout) | [data-layout](../../examples/sv/data-layout/main.go) |
 
 
-## Discover an IED and read its current dataset
+## Online discovery and current reads
 
-The following complete function needs only an address. It uses the first online dataset for demonstration; a monitoring application should select its intended dataset from the directory. Run a local fixture with `go run ./examples/scd/station` or use an actual IED address.
-
-```go
-import (
-    "context"
-    "fmt"
-    "time"
-
-    "github.com/mababaNiubi/go-iec61850/ied"
-)
-
-func inspect(address string) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-    defer cancel()
-    client, err := ied.Dial(ctx, address, ied.Config{})
-    if err != nil { return err }
-    defer client.Close()
-
-    directory, err := client.Discover(ctx, ied.DiscoveryOptions{MaxObjects: 4096})
-    if err != nil { return err }
-    if directory.Truncated || len(directory.Diagnostics) != 0 {
-        fmt.Println("Incomplete discovery:", directory.Truncated, directory.Diagnostics)
-    }
-    if len(directory.DataSets) == 0 { return fmt.Errorf("no online dataset found") }
-    snapshot, err := client.ReadDataSet(ctx, directory.DataSets[0].Name)
-    if err != nil { return err }
-    leaves, err := snapshot.Leaves()
-    if err != nil { return err }
-    for _, leaf := range leaves {
-        // Keep Variable.Selection when identifying array elements.
-        fmt.Println(leaf.Variable.Name, leaf.Variable.Selection, leaf.Value)
-    }
-    return nil
-}
-```
-
-Discovery returns declarations, not process values. Check `Diagnostics` and `Truncated`. `ReadDataSet` reads online member types and then values in one confirmed MMS Read. It returns an error if any member fails. Call the typed value accessors (`Bool`, `Int`, `Uint`, `Float`, `Time`) and handle conversion errors. [Compiled and executed examples](../../ied/example_test.go) also appear in `go doc`/pkg.go.dev.
+Use `ied.Client.Discover` to inspect declarations without SCL. Check Diagnostics
+and Truncated before treating the directory as complete. Select the intended
+dataset and call `ReadDataSet`; discovery itself does not read process values.
+See [discovery and snapshots](engineering.md#online-discovery-and-current-snapshots)
+and [executable GoDoc examples](../../ied/example_test.go).
 
 ## Add your device logic to an SCL model
 

@@ -4,7 +4,7 @@
 
 [English](README.md) | 简体中文
 
-按正在做的事情选一项，代码可复制到应用中。每页都说明需要的对象、参数、返回结果和对应示例。
+第一次使用请先看[快速 API 指引](quickstart.zh-CN.md)，包含完整程序、本机对端和预期输出。本页按任务检索公开接口与调用约定。
 
 | 你要做什么 | 直接看这里 | 可运行代码 |
 |---|---|---|
@@ -30,45 +30,23 @@
 
 [示例运行方法](../../examples/README.zh-CN.md) · [现成命令行工具](../../cmd/README.zh-CN.md)
 
-## 不用 SCL 发现设备并读取现值
+## 包选择
 
-下面函数只需要设备地址，演示选择发现的第一个数据集；正式程序应选择业务需要的数据集。可先运行 `go run ./examples/scd/station` 查看本机设备地址，也可以连接真实 IED。
+| 包 | 用途 |
+|---|---|
+| `mms` | TCP 关联、原始读写、目录和自定义服务端 |
+| `ied` | 发现、建模控制、URCB/BRCB、快照与定值组 |
+| `scl` | 工程解析、路径查询、模型目录及设备存储 |
+| `simulator` | 单设备或整站运行与自定义采集/执行回调 |
+| `data` | 不可变类型值、声明与校验 |
+| `goose`、`sv` | 二层发布订阅、布局和共享接收器 |
+| `ethernet` | 支持平台的物理网卡帧传输 |
 
-```go
-import (
-    "context"
-    "fmt"
-    "time"
+## 在线发现与现值
 
-    "github.com/mababaNiubi/go-iec61850/ied"
-)
-
-func inspect(address string) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-    defer cancel()
-    client, err := ied.Dial(ctx, address, ied.Config{})
-    if err != nil { return err }
-    defer client.Close()
-
-    directory, err := client.Discover(ctx, ied.DiscoveryOptions{MaxObjects: 4096})
-    if err != nil { return err }
-    if directory.Truncated || len(directory.Diagnostics) != 0 {
-        fmt.Println("发现结果不完整：", directory.Truncated, directory.Diagnostics)
-    }
-    if len(directory.DataSets) == 0 { return fmt.Errorf("没有在线数据集") }
-    snapshot, err := client.ReadDataSet(ctx, directory.DataSets[0].Name)
-    if err != nil { return err }
-    leaves, err := snapshot.Leaves()
-    if err != nil { return err }
-    for _, leaf := range leaves {
-        // 数组成员的身份需要同时保留 Selection。
-        fmt.Println(leaf.Variable.Name, leaf.Variable.Selection, leaf.Value)
-    }
-    return nil
-}
-```
-
-`Discover` 返回声明，不读取现值；检查 `Diagnostics` 和 `Truncated`。`ReadDataSet` 先读取成员类型，再在一个 MMS Read 中取得数据；任一成员失败会返回错误。使用 `Bool`、`Int`、`Uint`、`Float`、`Time` 转换值并处理类型错误。[GoDoc 示例](../../ied/example_test.go) 会随测试编译和执行。
+`ied.Client.Discover` 无需 SCL 即可查询在线声明，但不读取过程现值。检查 Diagnostics、
+Truncated 后选择业务数据集，调用 ReadDataSet。参见[在线发现与快照](engineering.zh-CN.md#在线发现报告历史与现值)
+和[可执行 GoDoc 示例](../../ied/example_test.go)。
 
 ## 把自己的逻辑接入 SCL
 
