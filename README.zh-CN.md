@@ -50,12 +50,12 @@ SCL 工程声明将逻辑设备、测点、数据集和网络流映射为经过�
 在已有 Go 模块中添加 SDK：
 
 ```sh
-go get github.com/mababaNiubi/go-iec61850@v1.4.0
+go get github.com/mababaNiubi/go-iec61850@v1.4.1
 ```
 
 按需导入 `github.com/mababaNiubi/go-iec61850/mms`、`ied` 等公开包，参见[包选择](docs/api/README.zh-CN.md#包选择)。
 
-无需 Go 环境时，可从 [v1.4.0](https://github.com/mababaNiubi/go-iec61850/releases/tag/v1.4.0) 下载 Windows amd64 或 Linux amd64 的 IEDLab 包，并用 `SHA256SUMS.txt` 校验。压缩包包含启动说明和 SCD 模型。
+无需 Go 环境时，可从 [v1.4.1](https://github.com/mababaNiubi/go-iec61850/releases/tag/v1.4.1) 下载 Windows amd64 或 Linux amd64 的 IEDLab 包，并用 `SHA256SUMS.txt` 校验。压缩包包含启动说明和 SCD 模型。
 
 ## 快速开始
 

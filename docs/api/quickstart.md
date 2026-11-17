@@ -32,7 +32,7 @@ In terminal B, outside the SDK checkout, create a new empty directory:
 mkdir iec61850-demo
 cd iec61850-demo
 go mod init example.com/iec61850-demo
-go get github.com/mababaNiubi/go-iec61850@v1.4.0
+go get github.com/mababaNiubi/go-iec61850@v1.4.1
 ```
 
 The application imports the published module. No `replace`, local SDK directory

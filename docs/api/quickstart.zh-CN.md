@@ -28,7 +28,7 @@ go run ./cmd/iedlab protocol mms-server -address 127.0.0.1:8102
 mkdir iec61850-demo
 cd iec61850-demo
 go mod init example.com/iec61850-demo
-go get github.com/mababaNiubi/go-iec61850@v1.4.0
+go get github.com/mababaNiubi/go-iec61850@v1.4.1
 ```
 
 业务程序引用已发布的模块，不需要 `replace`、相邻 SDK 源码或 `go.work`。

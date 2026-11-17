@@ -57,12 +57,12 @@ The runtime library has no third-party Go module dependencies and requires no cg
 Add the SDK to an existing Go module:
 
 ```sh
-go get github.com/mababaNiubi/go-iec61850@v1.4.0
+go get github.com/mababaNiubi/go-iec61850@v1.4.1
 ```
 
 Import the public package you need, such as `github.com/mababaNiubi/go-iec61850/mms` or `ied`. See the [package guide](docs/api/README.md#packages).
 
-For IEDLab without a Go toolchain, download a Windows amd64 or Linux amd64 archive from [v1.4.0](https://github.com/mababaNiubi/go-iec61850/releases/tag/v1.4.0) and verify it against `SHA256SUMS.txt`. Each archive includes startup instructions and SCD models.
+For IEDLab without a Go toolchain, download a Windows amd64 or Linux amd64 archive from [v1.4.1](https://github.com/mababaNiubi/go-iec61850/releases/tag/v1.4.1) and verify it against `SHA256SUMS.txt`. Each archive includes startup instructions and SCD models.
 
 ## Quick start
 

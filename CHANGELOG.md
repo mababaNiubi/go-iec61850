@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.1 - 2026-11-17
+
+- Animate ST/MX process values with random, ramp, sine and sequence generators that publish through reports, GOOSE and SV while staying independent of the simulator lifecycle.
+- Import COMTRADE 1991/1999/2013 recordings (ASCII, BINARY, BINARY32, FLOAT32) and replay channels onto model points with decimation and looping, mapping digital channels to BOOL/INT/Dbpos.
+- Record structured control history with originator and ctlNum evidence, add `GET /api/controls` and render a filterable Controls table with JSON export.
+- Aggregate MMS reads into one journal line per second so polling clients cannot evict control records.
+- Document generators, recorded playback, control history and the new HTTP endpoints in English and Simplified Chinese.
+
 ## 1.4.0 - 2026-11-12
 
 - Serve coherent multi-member MMS reads through an optional batch store capability, preserving existing Read decorators.

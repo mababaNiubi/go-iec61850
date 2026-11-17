@@ -7,7 +7,7 @@ New to the SDK? Follow the [API quick start](quickstart.md) for a complete progr
 Install with Go 1.24 or later:
 
 ```sh
-go get github.com/mababaNiubi/go-iec61850@v1.4.0
+go get github.com/mababaNiubi/go-iec61850@v1.4.1
 ```
 
 Import packages below `github.com/mababaNiubi/go-iec61850/`. Applications use public packages directly; IEDLab is an optional CLI/browser application built on the same APIs.

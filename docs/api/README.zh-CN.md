@@ -1,6 +1,6 @@
 # API 使用手册
 
-[工程场景](engineering.zh-CN.md) 包含一次设备选点、建模上送、BRCB 续传、定值操作和完整软件站点。安装：`go get github.com/mababaNiubi/go-iec61850@v1.4.0`，要求 Go 1.24+。
+[工程场景](engineering.zh-CN.md) 包含一次设备选点、建模上送、BRCB 续传、定值操作和完整软件站点。安装：`go get github.com/mababaNiubi/go-iec61850@v1.4.1`，要求 Go 1.24+。
 
 [English](README.md) | 简体中文
 
