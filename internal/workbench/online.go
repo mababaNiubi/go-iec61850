@@ -191,7 +191,17 @@ func (m *Manager) ControlRemote(ctx context.Context, id, reference, action strin
 	if err != nil {
 		reply.Error = err.Error()
 	}
-	m.log.add("control."+action, id, fmt.Sprintf("%s · %+v · %s", reference, reply.Result, reply.Error))
+	rec := ControlRecord{Device: id, Reference: reference, Action: action, Via: "remote"}
+	if action == "operate" || action == "select" {
+		rec.Value = string(raw)
+	}
+	if reply.Error != "" {
+		rec.Result = reply.Error
+	}
+	if reply.Result.Selected {
+		rec.Result = strings.TrimSpace("selected " + rec.Result)
+	}
+	m.log.addControl(rec)
 	// Preserve accepted-but-unconfirmed evidence even when termination fails.
 	return reply, nil
 }

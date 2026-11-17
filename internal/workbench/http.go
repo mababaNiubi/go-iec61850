@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -168,6 +169,28 @@ func (m *Manager) Handler() http.Handler {
 		}
 		respond(w, map[string]bool{"ok": true}, m.Operate(r.Context(), r.PathValue("id"), q.Reference, *q.Value))
 	})
+	mux.HandleFunc("GET /api/devices/{id}/generators", func(w http.ResponseWriter, r *http.Request) {
+		v, e := m.Generators(r.PathValue("id"))
+		respond(w, v, e)
+	})
+	mux.HandleFunc("POST /api/devices/{id}/generators", func(w http.ResponseWriter, r *http.Request) {
+		var q GeneratorConfig
+		if !decode(w, r, &q) {
+			return
+		}
+		v, e := m.SetGenerator(r.Context(), r.PathValue("id"), q)
+		respond(w, v, e)
+	})
+	mux.HandleFunc("DELETE /api/devices/{id}/generators", func(w http.ResponseWriter, r *http.Request) {
+		ref, fc := r.URL.Query().Get("reference"), r.URL.Query().Get("fc")
+		var err error
+		if ref == "" && fc == "" {
+			err = m.RemoveAllGenerators(r.PathValue("id"))
+		} else {
+			err = m.RemoveGenerator(r.PathValue("id"), ref, fc)
+		}
+		respond(w, map[string]bool{"ok": true}, err)
+	})
 	mux.HandleFunc("GET /api/interfaces", func(w http.ResponseWriter, r *http.Request) { v, e := ethernet.Interfaces(); respond(w, v, e) })
 	mux.HandleFunc("POST /api/connections", func(w http.ResponseWriter, r *http.Request) {
 		var q struct{ Address, Device string }
@@ -201,6 +224,40 @@ func (m *Manager) Handler() http.Handler {
 			return
 		}
 		respond(w, map[string]bool{"ok": true}, m.WriteRemote(r.Context(), r.PathValue("id"), q.Domain, q.Item, q.Value))
+	})
+	mux.HandleFunc("GET /api/recordings", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, m.Recordings())
+	})
+	mux.HandleFunc("POST /api/recordings", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, recordingCfgLimit+recordingDatLimit+512)
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			writeError(w, fmt.Errorf("upload a multipart cfg and dat pair: %v", err))
+			return
+		}
+		cfg, err := multipartFile(r, "cfg")
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		dat, err := multipartFile(r, "dat")
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		name := strings.TrimSpace(r.FormValue("name"))
+		rec, err := m.ImportRecording(name, cfg, dat)
+		respond(w, rec, err)
+	})
+	mux.HandleFunc("GET /api/recordings/{id}", func(w http.ResponseWriter, r *http.Request) {
+		v, e := m.Recording(r.PathValue("id"))
+		respond(w, v, e)
+	})
+	mux.HandleFunc("DELETE /api/recordings/{id}", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, map[string]bool{"ok": true}, m.RemoveRecording(r.PathValue("id")))
+	})
+	mux.HandleFunc("GET /api/controls", func(w http.ResponseWriter, r *http.Request) {
+		after, _ := strconv.ParseUint(r.URL.Query().Get("after"), 10, 64)
+		writeJSON(w, 200, m.ControlHistory(after))
 	})
 	mux.HandleFunc("GET /api/events", m.eventStream)
 	files, _ := fs.Sub(webFiles, "web")
@@ -242,6 +299,22 @@ func decode(w http.ResponseWriter, r *http.Request, out any) bool {
 		return false
 	}
 	return true
+}
+
+func multipartFile(r *http.Request, field string) ([]byte, error) {
+	f, _, err := r.FormFile(field)
+	if err != nil {
+		return nil, fmt.Errorf("missing the %s file: %v", field, err)
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("the %s file is empty", field)
+	}
+	return raw, nil
 }
 func respond(w http.ResponseWriter, v any, err error) {
 	if err != nil {

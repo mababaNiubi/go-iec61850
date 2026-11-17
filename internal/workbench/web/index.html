@@ -86,6 +86,9 @@
           <button class="tab" data-tab="client" data-i18n="client">
             MMS client
           </button>
+          <button class="tab" data-tab="playback" data-i18n="playback">
+            Recordings
+          </button>
           <button class="tab" data-tab="engineering" data-i18n="engineering">
             Engineering & reports
           </button>
@@ -173,6 +176,9 @@
         <section id="goose-view" class="view hidden">
           <div id="stream-content" class="stream-content"></div>
         </section>
+        <section id="playback-view" class="view hidden">
+          <div id="playback-content" class="stream-content"></div>
+        </section>
         <section id="engineering-view" class="view hidden">
           <div id="engineering-content" class="stream-content"></div>
         </section>
@@ -220,13 +226,30 @@
               ><span id="event-count" class="count-badge">0</span>
             </div>
             <div>
-              <select id="event-filter" aria-label="Filter events">
+              <button
+                id="journal-events"
+                class="text-button panel-toggle active"
+                data-i18n="journalEvents"
+              >
+                Events
+              </button
+              ><button
+                id="journal-controls"
+                class="text-button panel-toggle"
+                data-i18n="journalControls"
+              >
+                Controls
+              </button
+              ><select id="event-filter" aria-label="Filter events">
                 <option value="">All activity</option>
                 <option value="model">Model</option>
                 <option value="mms">MMS</option>
                 <option value="goose">GOOSE</option>
                 <option value="control">Control</option>
                 <option value="error">Errors</option></select
+              ><button id="control-export" class="text-button" hidden data-i18n="export">
+                Export JSON
+              </button
               ><button id="clear-log" class="text-button" data-i18n="clear">
                 Clear view
               </button>

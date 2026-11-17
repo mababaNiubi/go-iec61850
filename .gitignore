@@ -2,6 +2,7 @@
 /_local/
 /.idea/
 /.vscode/
+/.zcode/
 /.cache/
 /build/
 /bin/

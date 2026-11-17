@@ -46,6 +46,7 @@ type Manager struct {
 	docs        map[string]*imported
 	devices     map[string]*device
 	connections map[string]*connection
+	recordings  map[string]*recording
 	closed      bool
 	log         journal
 	stations    map[string]*stationRun
@@ -55,6 +56,7 @@ type device struct {
 	ied                 *scl.IED
 	points              []scl.Point
 	controls            []Control
+	gens                *generatorSet
 	mu                  sync.Mutex // lifecycle only, never acquired by a protocol callback
 	run                 *simulation
 	controlEnabled      atomic.Bool
@@ -91,19 +93,22 @@ type Point struct {
 	Value     any          `json:"value"`
 	Display   string       `json:"display"`
 	Editable  bool         `json:"editable"`
+	// Simulation names the animation mode when a generator owns this point.
+	Simulation string `json:"simulation,omitempty"`
 }
 type Detail struct {
-	Device   DeviceSummary        `json:"device"`
-	Points   []Point              `json:"points"`
-	DataSets []mms.NamedList      `json:"datasets"`
-	Streams  []scl.StreamInfo     `json:"streams"`
-	Inputs   []scl.InputReference `json:"inputs"`
-	Controls []Control            `json:"controls"`
-	Reports  []scl.ReportInfo     `json:"reports"`
+	Device     DeviceSummary        `json:"device"`
+	Points     []Point              `json:"points"`
+	DataSets   []mms.NamedList      `json:"datasets"`
+	Streams    []scl.StreamInfo     `json:"streams"`
+	Inputs     []scl.InputReference `json:"inputs"`
+	Controls   []Control            `json:"controls"`
+	Reports    []scl.ReportInfo     `json:"reports"`
+	Generators []GeneratorStatus    `json:"generators"`
 }
 
 func New() *Manager {
-	return &Manager{docs: map[string]*imported{}, devices: map[string]*device{}, connections: map[string]*connection{}, stations: map[string]*stationRun{}}
+	return &Manager{docs: map[string]*imported{}, devices: map[string]*device{}, connections: map[string]*connection{}, recordings: map[string]*recording{}, stations: map[string]*stationRun{}}
 }
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:12]) }
 
@@ -186,6 +191,7 @@ func (m *Manager) Select(docID, name, ap string) (DeviceSummary, error) {
 	}
 	d := &device{id: id, docID: docID, name: name, ap: ap, ied: ied, points: ied.Points()}
 	d.bindControls(&m.log)
+	d.gens = newGeneratorSet(id, ied, &m.log)
 	m.devices[id] = d
 	m.log.add("model.select", id, fmt.Sprintf("Instantiated %s/%s", name, ap))
 	return d.summary(), nil
@@ -244,6 +250,7 @@ func (m *Manager) Detail(ctx context.Context, id string) (Detail, error) {
 	}
 	out := Detail{Device: d.summary(), Points: []Point{}, DataSets: d.ied.DataSets(), Streams: []scl.StreamInfo{}, Controls: append([]Control{}, d.controls...)}
 	out.Reports = d.ied.Reports()
+	out.Generators = d.gens.snapshot()
 	for _, g := range d.ied.Streams() {
 		out.Streams = append(out.Streams, g.Info())
 	}
@@ -251,6 +258,7 @@ func (m *Manager) Detail(ctx context.Context, id string) (Detail, error) {
 	doc := m.docs[d.docID]
 	m.mu.RUnlock()
 	out.Inputs, _ = doc.system.Inputs(d.name, d.ap)
+	modes := d.gens.modes()
 	for _, p := range d.points {
 		t, e := d.ied.Type(ctx, p.Name)
 		if e != nil {
@@ -263,7 +271,7 @@ func (m *Manager) Detail(ctx context.Context, id string) (Detail, error) {
 				return Detail{}, e
 			}
 		}
-		out.Points = append(out.Points, Point{p.Reference, p.FC, p.Name.Domain, p.Name.Item, t.Kind.String(), t, ValueJSON(v), v.String(), p.FC == "ST" || p.FC == "MX"})
+		out.Points = append(out.Points, Point{p.Reference, p.FC, p.Name.Domain, p.Name.Item, t.Kind.String(), t, ValueJSON(v), v.String(), p.FC == "ST" || p.FC == "MX", modes[p.Name]})
 	}
 	return out, nil
 }
@@ -348,6 +356,7 @@ func (m *Manager) Close() error {
 			failures = append(failures, d.run.stop())
 		}
 		d.mu.Unlock()
+		d.gens.stopAll()
 	}
 	for _, c := range conns {
 		c.services.Close()

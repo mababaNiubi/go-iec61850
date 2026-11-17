@@ -21,6 +21,7 @@ go run ./cmd/iedlab serve -http 127.0.0.1:8080
 5. 选择 `MMXU1.TotW.mag.f`，填入 JSON 数字，点击 **Apply value / 应用采集值**。值、现有品质和新时标在同一批采集中生效。
 6. 点击 **Connect client / 连接 MMS 客户端**，展开 `BayIEDCTRL` 域，选择 `MMXU1$MX$TotW$mag$f`。这次读值通过实际 TCP 请求完成，日志会显示服务端访问。
 7. 在 **Datasets & GOOSE** 页查看 FCDA 顺序、APPID、VLAN、重传时间和 ExtRef 输入绑定。
+8. 选中测量点（如 `MMXU1.TotW.mag.f`），在检查器 **数值模拟 / VALUE SIMULATION** 区选择模式：范围随机、累加/累减、正弦或粘贴序列值。运行中的点带 `SIM` 徽标；录波文件在 **录波回放** 页导入后把通道映射到点位即可回放。
 
 左侧逻辑节点树可过滤点表，搜索框同时匹配对象引用和 MMS item。勾选 **Structures** 可以查看结构，结构按有序 JSON 数组编辑。右上角语言按钮切换主要界面的中英文。
 
@@ -113,10 +114,38 @@ flowchart LR
 | `POST /api/connections/{id}/controls` | `{"Reference":"BayIEDCTRL/XCBR1.Pos","Action":"operate","Value":true,"Options":{"InterlockCheck":true}}`；Action 也支持 select、cancel |
 | `GET /api/connections/{id}/settings?domain=BayIEDCTRL` | 读取指定 Domain 的 NumOfSG、ActSG、EditSG |
 | `POST /api/connections/{id}/settings` | 编辑确认：`{"Domain":"BayIEDCTRL","Group":2,"Values":{"PTOC1.StrVal.setMag.f":12},"Activate":false}`；激活已有组用 ActivateOnly=true，无需 Values |
+| `GET /api/devices/{id}/generators` | 查询数值模拟任务列表 |
+| `POST /api/devices/{id}/generators` | 创建或替换：`{"Reference":"…MMXU1.TotW.mag.f","FC":"MX","Mode":"random","IntervalMS":1000,"Min":100,"Max":200}` |
+| `DELETE /api/devices/{id}/generators?reference=…&fc=MX` | 停止单个任务；不带查询参数则全部停止 |
+| `POST /api/recordings` | multipart 上传 COMTRADE `cfg` + `dat` 文件对（上限 64 MiB，仅存内存） |
+| `GET /api/recordings` / `GET /api/recordings/{id}` | 列出或查看已导入录波 |
+| `DELETE /api/recordings/{id}` | 删除录波，同时停止依赖它的回放任务 |
+| `GET /api/controls?after=0` | 结构化控制历史（`control.record` 事件） |
 
 控制和定值操作会在正常 JSON 响应中保留部分成功证据；即使 HTTP 200，也要检查 `result` 和 `error`。Acknowledged 不代表物理反馈。操作已保存的选择时复用选择阶段的值和选项。表中路径只是示例，提交前应发现或检查目标的真实声明。
 
 断线续传的 `Options.ResumeEntryID` 在 JSON 中是 base64 字节串，`"AAAAAAAAAAA="` 表示从保留历史起点读取；界面接收十六进制并转换。不能与 PurgeBuffer 同用。每个连接最多保留 500 条记录，关闭连接或工作台后丢失。`Oldest`、`Last`、`gap` 描述本地保留范围，与服务端 EntryID、报告序号不同。现值读取会新增记录，但不推进 BRCB 游标。
+
+### 数值发生器
+
+发生器让一个 ST/MX 点位按设定规律持续走本地采集通道更新，模拟器或整站运行时报告、GOOSE、SV 自动跟随变化。发生器与传输层解耦：模拟器停止后继续运行，重启后配置和状态保留。限制：每台 IED 64 个，`IntervalMS` 范围 100–3,600,000，内联序列最多 4096 个值。
+
+| 模式 | 字段 | 行为 |
+|---|---|---|
+| `random` | `Min`、`Max` | 每个间隔在范围内均匀随机（数值点） |
+| `ramp` | `Step`（负数为累减）、可选 `Min`/`Max`、`Wrap` | 当前值每步加 Step；Wrap 在边界回绕到另一端，否则钳停在边界 |
+| `sine` | `Base`、`Amplitude`、`FrequencyHz`、可选 `PhaseDeg` | `Base + Amplitude·sin(2πft + φ)` |
+| `sequence` | `Values`（逐项 JSON 值）或 `Recording`+`Channel`+`Decimation`，`Loop` | 按顺序逐个输出；整数点四舍五入，无符号点负值钳 0；不开 Loop 时播完保留末值并停止 |
+
+仅改 `Paused` 重新提交同一配置，可在不重置动画状态的情况下暂停/恢复。检查器的“数值模拟”区直接编辑选中点位；运行中的行带有 `SIM` 徽标。日志类型 `simulation.generator` 只记录生命周期事件，不会按周期刷屏。
+
+### 录波回放
+
+导入 COMTRADE 1991/1999/2013 录波（ASCII、BINARY、BINARY32、FLOAT32 数据格式），把任意通道以 `sequence` 发生器映射到模型点位即可回放。模拟通道要求数值点；数字通道可映射到 BOOL、INT32/INT64 或 Dbpos 状态点（断路器位置按开/合回放）。原生采样率高于回放间隔时用 `Decimation` 抽点。录波保存在内存中，最多 8 个、每个不超过 4M 通道采样点。删除录波会先停止其回放任务。
+
+### 控制历史
+
+每次控制动作——本地操作/拒绝/闭锁与远端 select/operate/cancel，以及带发起者和 ctlNum 的执行器反馈——都以结构化 `control.record` 事件记录，并可通过 `GET /api/controls` 查询。日志面板的 **控制记录** 视图以表格呈现并支持导出 JSON。MMS 读按设备每秒聚合为一条 `mms.read ×N`，轮询客户端不会刷爆日志；写操作保持逐条记录。
 
 
 ## 构建和底层诊断

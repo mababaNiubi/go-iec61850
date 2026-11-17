@@ -19,6 +19,7 @@ Open `http://127.0.0.1:8080`. Click **Load sample**, select **BayIED / S1**, the
 5. Select `MMXU1.TotW.mag.f`, enter a JSON number, and click **Apply value**. The local acquisition commits the value, current quality and new timestamp together.
 6. Click **Connect client**, open the `BayIEDCTRL` domain and read `MMXU1$MX$TotW$mag$f` through TCP. The journal shows the server read.
 7. Inspect the **Datasets & GOOSE** tab for ordered FCDA members, APPID, VLAN, timing and ExtRef source bindings.
+8. Select a measurement (e.g. `MMXU1.TotW.mag.f`) and use the inspector's **VALUE SIMULATION** section: random range, ramp, sine or a pasted value sequence. Animated rows carry a `SIM` badge; import captures in the **Recordings** tab and map a channel onto a point for playback.
 
 The left tree filters logical nodes. Search also matches the full object reference or MMS item. **Structures** shows composite types as ordered JSON arrays. The language button switches the main interface between English and Simplified Chinese.
 
@@ -118,8 +119,36 @@ The API uses JSON except for raw SCL uploads. Successful responses contain the r
 | `POST /api/connections/{id}/controls` | `{"Reference":"BayIEDCTRL/XCBR1.Pos","Action":"operate","Value":true,"Options":{"InterlockCheck":true}}`; Action also accepts `select` or `cancel` |
 | `GET /api/connections/{id}/settings?domain=BayIEDCTRL` | Read NumOfSG/ActSG/EditSG from the selected domain |
 | `POST /api/connections/{id}/settings` | Edit/confirm with `{"Domain":"BayIEDCTRL","Group":2,"Values":{"PTOC1.StrVal.setMag.f":12},"Activate":false}` or activate an existing group with `ActivateOnly:true` and no Values |
+| `GET /api/devices/{id}/generators` | List the point animation tasks |
+| `POST /api/devices/{id}/generators` | Create or replace: `{"Reference":"…MMXU1.TotW.mag.f","FC":"MX","Mode":"random","IntervalMS":1000,"Min":100,"Max":200}` |
+| `DELETE /api/devices/{id}/generators?reference=…&fc=MX` | Stop one generator; without the query stop all |
+| `POST /api/recordings` | Multipart COMTRADE `cfg` + `dat` pair (64 MiB cap, kept in memory) |
+| `GET /api/recordings` / `GET /api/recordings/{id}` | List or inspect imported captures |
+| `DELETE /api/recordings/{id}` | Delete, stopping playback that still reads it |
+| `GET /api/controls?after=0` | Structured control history (`control.record` events) |
 
 Control and setting operations preserve partial protocol evidence in a normal JSON reply: inspect both `result` and `error`, even for HTTP 200. `Acknowledged` is not physical feedback. When operating a saved selection, the selected value/options are reused. Paths and datasets above are examples; discover or inspect the actual target before submitting.
+
+### Value generators
+
+A generator animates one ST/MX point through the local acquisition path, so reports, GOOSE and SV pick changes up whenever a simulator or station runs. Generators are independent of the transport: they keep running while the simulator is stopped and survive restarts. Limits: 64 per IED, `IntervalMS` within 100–3,600,000, inline sequences up to 4096 values.
+
+| Mode | Fields | Behaviour |
+|---|---|---|
+| `random` | `Min`, `Max` | Uniform random sample each interval (numeric points) |
+| `ramp` | `Step` (negative counts down), optional `Min`/`Max`, `Wrap` | Adds `Step` to the current value; `Wrap` restarts at the opposite bound, otherwise the value clamps |
+| `sine` | `Base`, `Amplitude`, `FrequencyHz`, optional `PhaseDeg` | `Base + Amplitude·sin(2πft + φ)` |
+| `sequence` | `Values` (one JSON value per entry) or `Recording`+`Channel`+`Decimation`, `Loop` | Plays values in order; integer points round, unsigned clamps negatives; without `Loop` the last value is held and the task stops |
+
+Reposting the same configuration with only `Paused` changed toggles pause/resume without resetting the animation state. The inspector's VALUE SIMULATION section edits the selected point; animated rows carry a `SIM` badge. Journal kind `simulation.generator` records lifecycle events only — per-tick updates are not logged.
+
+### Recorded playback
+
+Import a COMTRADE 1991/1999/2013 capture (ASCII, BINARY, BINARY32, FLOAT32 data) and map any channel onto a model point as a `sequence` generator. Analog channels require numeric points; digital channels map onto BOOL, INT32/INT64 or Dbpos status points (breaker position replays as Open/Closed). `Decimation` skips samples when the native rate exceeds the playback interval. Recordings are bounded (8 per workspace, 4M channel-samples each) and stay in memory. Deleting a recording stops its playback.
+
+### Control history
+
+Every control action — local operate/denial/interlock and remote select/operate/cancel, including actuator feedback with originator and ctlNum — is recorded as a structured `control.record` journal event and exposed at `GET /api/controls`. The journal panel's **Controls** view renders it as a table with JSON export. MMS reads are aggregated into one `mms.read ×N` line per second so polling clients cannot flood the journal; writes stay individual.
 
 For buffered resume, `Options.ResumeEntryID` is a JSON base64 byte string (`"AAAAAAAAAAA="` requests retained history from the beginning). The browser accepts hexadecimal and converts it. Do not combine ResumeEntryID with PurgeBuffer. History contains the latest 500 records per live connection and is lost when that connection/workbench is closed. `Oldest`, `Last` and `gap` describe local history retention; they are separate from the server's report EntryID/sequence. Current reads add history records but never advance a BRCB cursor.
 

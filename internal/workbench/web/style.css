@@ -1276,3 +1276,187 @@ dialog select {
 .report-record summary { cursor: pointer; overflow-wrap: anywhere; }
 .report-record td { overflow-wrap: anywhere; white-space: normal; }
 .project-panel { margin-top: 24px; }
+
+/* --- Value generators, control history and recordings ---------------------- */
+
+/* Animated points carry a SIM badge next to their reference. */
+.sim-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  vertical-align: 1px;
+}
+
+/* Inspector simulation form: mode-specific groups toggle with .show. */
+.sim-grid {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.sim-grid select {
+  flex: 1;
+}
+.sim-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.sim-field input {
+  width: 100%;
+}
+.sim-fields {
+  display: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.sim-fields.show {
+  display: grid;
+}
+.sim-fields .small-check {
+  grid-column: 1 / -1;
+}
+.sim-fields p,
+.sim-fields textarea {
+  grid-column: 1 / -1;
+}
+.sim-values {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+}
+.sim-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sim-state {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+.sim-state.on {
+  color: var(--accent);
+}
+
+/* Journal panel: Events | Controls view toggle. */
+.panel-toggle {
+  border-bottom: 2px solid transparent;
+  padding-bottom: 1px;
+}
+.panel-toggle.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+.controls-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.controls-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-align: left;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.controls-table td {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.controls-table time {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.controls-table tr.denied td {
+  color: #b3564d;
+}
+
+/* Recordings tab. */
+.rec-files {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.rec-files label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.rec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.rec-table th {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-align: left;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.rec-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.rec-map-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.rec-map-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.rec-map-row input[type="number"] {
+  width: 90px;
+}
+.rec-play {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.rec-play strong {
+  font-family: var(--mono);
+  font-size: 12px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-play small {
+  color: var(--muted);
+}

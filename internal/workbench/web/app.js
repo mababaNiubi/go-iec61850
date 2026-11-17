@@ -59,6 +59,33 @@ const dictionaries = {
     discoverServices: "Discover services",
     reportHint:
       "Report values and EntryID appear in the event journal. A BRCB resume cursor uses hexadecimal bytes.",
+    playback: "Recordings",
+    journalEvents: "Events",
+    journalControls: "Controls",
+    export: "Export JSON",
+    simSection: "VALUE SIMULATION",
+    simApply: "Start / update",
+    simStop: "Stop",
+    simPause: "Pause",
+    simResume: "Resume",
+    simRunning: "running",
+    simPaused: "paused",
+    simIdle: "stopped",
+    generators: "ACTIVE GENERATORS",
+    stopAll: "Stop all",
+    recUpload: "Import capture",
+    recEmpty:
+      "Import a COMTRADE cfg + dat pair, then map a channel onto a model point for playback.",
+    recChannels: "Channels",
+    recMap: "Map channel to point",
+    recPoint: "Model point",
+    recInterval: "Interval ms",
+    recDecimation: "Decimation",
+    recLoop: "Loop",
+    recActive: "Playback generators",
+    recPlayback: "Play",
+    recDelete: "Delete",
+    recDuration: "duration",
   },
   zh: {
     import: "导入 SCL",
@@ -106,6 +133,33 @@ const dictionaries = {
     discoverServices: "发现在线服务",
     reportHint:
       "报告值和 EntryID 显示在事件日志中。BRCB 续传标识填写十六进制字节。",
+    playback: "录波回放",
+    journalEvents: "事件",
+    journalControls: "控制记录",
+    export: "导出 JSON",
+    simSection: "数值模拟",
+    simApply: "启动 / 更新",
+    simStop: "停止",
+    simPause: "暂停",
+    simResume: "恢复",
+    simRunning: "运行中",
+    simPaused: "已暂停",
+    simIdle: "已停止",
+    generators: "活跃模拟任务",
+    stopAll: "全部停止",
+    recUpload: "导入录波",
+    recEmpty:
+      "导入 COMTRADE 的 cfg + dat 文件对，再把通道映射到模型点位即可回放。",
+    recChannels: "通道",
+    recMap: "通道映射到点位",
+    recPoint: "模型点位",
+    recInterval: "间隔 ms",
+    recDecimation: "抽点",
+    recLoop: "循环",
+    recActive: "回放任务",
+    recPlayback: "回放",
+    recDelete: "删除",
+    recDuration: "时长",
   },
 };
 let language = localStorage.getItem("iedlab-language") || "en";
@@ -124,11 +178,14 @@ const state = {
   search: "",
   structures: false,
   editorDirty: false,
+  simDirty: false,
   clientId: "",
   domain: "",
   remoteItem: "",
   remotePoint: null,
   eventFloor: 0,
+  journalView: "events",
+  recordings: [],
   remoteNames: [],
   receiver: null,
   catalog: null,
@@ -191,6 +248,7 @@ function applyLanguage() {
   renderSummary();
   renderStation();
   renderInspector(true);
+  if (state.tab === "playback") renderPlayback();
 }
 async function refreshState() {
   const result = await api("/state");
@@ -416,6 +474,7 @@ async function refreshDetail() {
   renderRows();
   renderInspector();
   if (state.tab === "goose" && !state.receiver) renderStreams();
+  if (state.tab === "playback") renderPlayback();
 }
 function pointKey(p) {
   return p.reference + "|" + p.fc;
@@ -432,6 +491,7 @@ function renderSummary() {
   const leaves = state.detail.points.filter(
     (p) => p.kind !== "structure" && p.kind !== "array",
   ).length;
+  const generators = state.detail.generators || [];
   $("#metrics").innerHTML = [
     '<div class="metric"><label>' +
       (language === "zh" ? "模型属性" : "MODEL ATTRIBUTES") +
@@ -445,15 +505,26 @@ function renderSummary() {
       '"><i class="status-dot"></i>' +
       esc(d.status) +
       "</span></div>",
-    '<div class="metric"><label>GOOSE / DATASETS</label><strong>' +
-      state.detail.streams.length +
-      '<span style="color:#a5afba;font-weight:400"> / ' +
-      state.detail.datasets.length +
-      "</span></strong></div>",
+    '<div class="metric"><label>' +
+      esc(tr("generators")) +
+      "</label><strong>" +
+      generators.filter((g) => g.Running).length +
+      "/" +
+      generators.length +
+      (generators.length
+        ? ' <button id="stop-generators" class="text-button">' + esc(tr("stopAll")) + "</button>"
+        : "") +
+      "</strong></div>",
     '<div class="metric"><label>MMS ENDPOINT</label><strong class="metric-small">' +
       esc(d.address || "—") +
       "</strong></div>",
   ].join("");
+  const stopAll = $("#stop-generators");
+  if (stopAll)
+    stopAll.onclick = guard(async () => {
+      await api("/devices/" + state.deviceId + "/generators", { method: "DELETE" });
+      await refreshDetail();
+    });
   const button = $("#simulation-toggle");
   button.textContent = d.status === "running" ? tr("stop") : tr("start");
   button.classList.toggle("secondary", d.status === "running");
@@ -499,7 +570,9 @@ function renderRows() {
       (p.reference + " " + p.item).toLowerCase().includes(query),
   );
   const fingerprint =
-    JSON.stringify(rows.map((p) => [pointKey(p), p.kind, p.display])) +
+    JSON.stringify(
+      rows.map((p) => [pointKey(p), p.kind, p.display, p.simulation]),
+    ) +
     state.deviceId +
     state.selected +
     language;
@@ -538,6 +611,9 @@ function renderRows() {
         esc(p.reference) +
         '">' +
         label +
+        (p.simulation
+          ? ' <span class="sim-badge" title="' + esc(p.simulation) + '">SIM·' + esc(p.simulation) + "</span>"
+          : "") +
         '</td><td><span class="fc ' +
         esc(p.fc) +
         '">' +
@@ -580,11 +656,14 @@ function renderInspector(force = false) {
       '<div class="inspector-empty">' + esc(tr("selected")) + "</div>";
     return;
   }
-  if (state.editorDirty && !force) return;
+  if ((state.editorDirty || state.simDirty) && !force) return;
   const controls = state.detail.controls.filter((c) =>
     p.reference.startsWith(c.reference.replace(/\.Oper$/, "") + "."),
   );
   const control = controls[0];
+  const gen = (state.detail.generators || []).find(
+    (g) => g.Reference === p.reference && g.FC === p.fc,
+  );
   const d = state.detail.device;
   const fingerprint = JSON.stringify([
     d.id,
@@ -594,6 +673,7 @@ function renderInspector(force = false) {
     d.interlocked,
     controls,
     language,
+    gen && [gen.Mode, gen.Running, gen.Paused, gen.Last, gen.SequenceIndex],
   ]);
   if (!force && fingerprint === lastInspector) return;
   lastInspector = fingerprint;
@@ -620,7 +700,9 @@ function renderInspector(force = false) {
     (p.editable ? "" : "disabled") +
     ">" +
     esc(tr("save")) +
-    '</button></div></div><div class="inspector-section"><div class="field-caption">' +
+    '</button></div></div>' +
+    (p.editable ? simulationHTML(p, gen) : "") +
+    '<div class="inspector-section"><div class="field-caption">' +
     esc(tr("wire")) +
     '</div><div class="address-row"><label>DOMAIN</label><code>' +
     esc(p.domain) +
@@ -658,6 +740,7 @@ function renderInspector(force = false) {
     state.editorDirty = true;
   };
   $("#save-point").onclick = guard(() => savePoint(p));
+  if (p.editable) wireSimulation(p, gen);
   if (control) {
     $("#control-open").onclick = guard(() => operate(control.reference, false));
     $("#control-close").onclick = guard(() => operate(control.reference, true));
@@ -669,6 +752,208 @@ function renderInspector(force = false) {
       await refreshDetail();
     });
   }
+}
+
+// A generator animates this point through the local acquisition path. The
+// form posts the whole configuration, so the same button starts and updates.
+function simulationHTML(p, gen) {
+  const mode = gen ? gen.Mode : "off";
+  const field = (id, label, value, extra = "") =>
+    '<label class="sim-field"><span>' +
+    esc(label) +
+    '</span><input id="' +
+    id +
+    '" type="number" step="any" value="' +
+    (value ?? "") +
+    '" ' +
+    extra +
+    "></label>";
+  const modes = [
+    ["off", "— off —"],
+    ["random", language === "zh" ? "范围随机" : "Random range"],
+    ["ramp", language === "zh" ? "累加 / 累减" : "Ramp ±"],
+    ["sine", language === "zh" ? "正弦波" : "Sine"],
+    ["sequence", language === "zh" ? "序列回放" : "Sequence"],
+  ];
+  const show = (m) => (mode === m ? " show" : "");
+  const sequenceText = gen?.Values?.length
+    ? gen.Values.map((v) => (typeof v === "string" ? JSON.stringify(v) : String(v))).join("\n")
+    : "";
+  return (
+    '<div class="inspector-section" id="sim-root"><div class="field-caption">' +
+    esc(tr("simSection")) +
+    '</div><div class="sim-grid"><select id="sim-mode" aria-label="Simulation mode">' +
+    modes
+      .map(([v, l]) => '<option value="' + v + '"' + (mode === v ? " selected" : "") + ">" + l + "</option>")
+      .join("") +
+    "</select>" +
+    field("sim-interval", language === "zh" ? "间隔 ms" : "Interval ms", gen ? gen.IntervalMS : 1000, 'min="100" step="100"') +
+    "</div>" +
+    '<div class="sim-fields' +
+    show("random") +
+    '" data-for="random ramp">' +
+    field("sim-min", "Min", gen?.Min) +
+    field("sim-max", "Max", gen?.Max) +
+    "</div>" +
+    '<div class="sim-fields' +
+    show("ramp") +
+    '" data-for="ramp">' +
+    field("sim-step", "Step", gen?.Step) +
+    '<label class="small-check"><input id="sim-wrap" type="checkbox"' +
+    (gen?.Wrap ? " checked" : "") +
+    "><span>" +
+    (language === "zh" ? "达界回绕（不勾选则钳停在边界）" : "Wrap at bounds") +
+    "</span></label></div>" +
+    '<div class="sim-fields' +
+    show("sine") +
+    '" data-for="sine">' +
+    field("sim-base", "Base", gen?.Base) +
+    field("sim-amp", "Amplitude", gen?.Amplitude) +
+    field("sim-freq", "Frequency Hz", gen?.FrequencyHz) +
+    field("sim-phase", "Phase °", gen?.PhaseDeg) +
+    "</div>" +
+    '<div class="sim-fields' +
+    show("sequence") +
+    '" data-for="sequence">' +
+    '<textarea id="sim-values" class="sim-values" rows="4" spellcheck="false" placeholder="' +
+    (language === "zh" ? "每行一个 JSON 值，如：&#10;12.5&#10;13&#10;14.5" : "one JSON value per line, e.g.&#10;12.5&#10;13&#10;14.5") +
+    '">' +
+    esc(sequenceText) +
+    '</textarea><label class="small-check"><input id="sim-loop" type="checkbox"' +
+    (gen?.Loop ? " checked" : "") +
+    "><span>" +
+    esc(tr("recLoop")) +
+    "</span></label><p>" +
+    (language === "zh"
+      ? "逐行输出；录波文件在“录波回放”标签页映射。"
+      : "Values play one per interval; map recordings in the Recordings tab.") +
+    "</p></div>" +
+    '<div class="sim-actions"><button id="sim-apply" class="button secondary">' +
+    esc(tr("simApply")) +
+    "</button>" +
+    (gen
+      ? '<span class="sim-state' + (gen.Running ? " on" : "") + '">' +
+        esc(gen.Running ? tr("simRunning") : gen.Paused ? tr("simPaused") : tr("simIdle")) +
+        (gen.SequenceIndex ? " · #" + gen.SequenceIndex : "") +
+        (gen.Last ? " · " + esc(gen.Last) : "") +
+        '</span><button id="sim-pause" class="button secondary">' +
+        esc(gen.Paused ? tr("simResume") : tr("simPause")) +
+        '</button><button id="sim-stop" class="button secondary">' +
+        esc(tr("simStop")) +
+        "</button>"
+      : "") +
+    "</div></div>"
+  );
+}
+
+function wireSimulation(p, gen) {
+  const root = $("#sim-root");
+  if (!root) return;
+  // Any edit keeps the current form on screen across the 2 s refresh.
+  root.querySelectorAll("input,select,textarea").forEach((el) => {
+    el.oninput = () => {
+      state.simDirty = true;
+    };
+  });
+  $("#sim-mode").onchange = (event) => {
+    state.simDirty = true;
+    const mode = event.target.value;
+    root.querySelectorAll(".sim-fields").forEach((group) => {
+      group.classList.toggle("show", group.dataset.for.split(" ").includes(mode));
+    });
+  };
+  $("#sim-apply").onclick = guard(async () => {
+    const number = (id) => {
+      const v = $("#" + id).value.trim();
+      return v === "" ? undefined : Number(v);
+    };
+    const mode = $("#sim-mode").value;
+    if (mode === "off") {
+      await api("/devices/" + state.deviceId + "/generators?reference=" + encodeURIComponent(p.reference) + "&fc=" + p.fc, { method: "DELETE" });
+      state.simDirty = false;
+      await refreshDetail();
+      return;
+    }
+    const body = {
+      Reference: p.reference,
+      FC: p.fc,
+      Mode: mode,
+      IntervalMS: Math.max(100, Math.round(Number($("#sim-interval").value) || 1000)),
+    };
+    if (mode === "random") {
+      body.Min = number("sim-min");
+      body.Max = number("sim-max");
+    }
+    if (mode === "ramp") {
+      body.Step = number("sim-step");
+      body.Min = number("sim-min");
+      body.Max = number("sim-max");
+      body.Wrap = $("#sim-wrap").checked;
+    }
+    if (mode === "sine") {
+      body.Base = number("sim-base");
+      body.Amplitude = number("sim-amp");
+      body.FrequencyHz = number("sim-freq");
+      body.PhaseDeg = number("sim-phase");
+    }
+    if (mode === "sequence") {
+      const lines = $("#sim-values").value.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (!lines.length && !gen?.Recording) {
+        notify(language === "zh" ? "序列模式需要至少一个值" : "Sequence mode needs at least one value", true);
+        return;
+      }
+      if (lines.length)
+        body.Values = lines.map((l) => {
+          try {
+            return JSON.parse(l);
+          } catch {
+            return l;
+          }
+        });
+      body.Loop = $("#sim-loop").checked;
+    }
+    await api("/devices/" + state.deviceId + "/generators", { method: "POST", body });
+    state.simDirty = false;
+    await refreshDetail();
+    notify(language === "zh" ? "模拟任务已更新" : "Simulation updated");
+  });
+  if (gen) {
+    $("#sim-pause").onclick = guard(async () => {
+      const body = generatorBody(gen);
+      body.Paused = !gen.Paused;
+      await api("/devices/" + state.deviceId + "/generators", { method: "POST", body });
+      await refreshDetail();
+    });
+    $("#sim-stop").onclick = guard(async () => {
+      await api("/devices/" + state.deviceId + "/generators?reference=" + encodeURIComponent(p.reference) + "&fc=" + p.fc, { method: "DELETE" });
+      state.simDirty = false;
+      await refreshDetail();
+    });
+  }
+}
+
+// Resend exactly what the status carries, so pause toggles do not restart the
+// animation state (the backend compares configurations).
+function generatorBody(gen) {
+  return {
+    Reference: gen.Reference,
+    FC: gen.FC,
+    Mode: gen.Mode,
+    IntervalMS: gen.IntervalMS,
+    Min: gen.Min,
+    Max: gen.Max,
+    Step: gen.Step,
+    Wrap: gen.Wrap,
+    Base: gen.Base,
+    Amplitude: gen.Amplitude,
+    FrequencyHz: gen.FrequencyHz,
+    PhaseDeg: gen.PhaseDeg,
+    Values: gen.Values?.length ? gen.Values : undefined,
+    Loop: gen.Loop,
+    Recording: gen.Recording || undefined,
+    Channel: gen.Channel,
+    Decimation: gen.Decimation,
+  };
 }
 async function savePoint(point) {
   const value = JSON.parse($("#value-editor").value);
@@ -788,10 +1073,11 @@ function showTab(tab) {
   document
     .querySelectorAll("[data-tab]")
     .forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  for (const name of ["model", "goose", "client", "engineering"])
+  for (const name of ["model", "goose", "client", "playback", "engineering"])
     $("#" + name + "-view").classList.toggle("hidden", name !== tab);
   if (tab === "goose") renderStreams();
   if (tab === "client") renderConnections();
+  if (tab === "playback") refreshRecordings().catch(() => renderPlayback());
   if (tab === "engineering") renderEngineering();
 }
 
@@ -1000,6 +1286,10 @@ function renderEngineering() {
   engineeringUI.project(box,state.catalogRef).catch(error => notify(error.message,true));
 }
 function renderEvents() {
+  if (state.journalView === "controls") {
+    renderControls();
+    return;
+  }
   const filter = $("#event-filter").value;
   const events = state.events.filter(
     (e) => e.id > state.eventFloor && (!filter || e.kind.includes(filter)),
@@ -1023,6 +1313,315 @@ function renderEvents() {
     )
     .join("");
   if (nearEnd) target.scrollTop = target.scrollHeight;
+}
+
+// Structured control audit rides the same journal channel: control.record
+// events carry the Control payload next to the readable message line.
+function controlRecords() {
+  return state.events.filter(
+    (e) => e.id > state.eventFloor && e.kind === "control.record" && e.control,
+  );
+}
+function renderControls() {
+  const records = controlRecords();
+  $("#event-count").textContent = records.length;
+  const target = $("#event-log");
+  const nearEnd =
+    target.scrollTop + target.clientHeight >= target.scrollHeight - 35;
+  const headings = ["", "DEVICE", "REFERENCE", "ACTION", "VALUE", "ORIGIN", "CTL#", "RESULT"];
+  target.innerHTML =
+    '<table class="controls-table"><thead><tr>' +
+    headings.map((h) => "<th>" + h + "</th>").join("") +
+    "</tr></thead><tbody>" +
+    records
+      .map((e) => {
+        const c = e.control;
+        // Show friendly names: IED name for local simulators, address for peers.
+        const who =
+          state.devices.find((d) => d.id === c.device)?.ied ||
+          state.connections.find((x) => x.id === c.device)?.address ||
+          c.device;
+        return (
+          '<tr class="' +
+          (c.result ? "denied" : "") +
+          '"><td><time>' +
+          new Date(e.time).toLocaleTimeString("en-GB") +
+          "</time></td><td>" +
+          esc(who) +
+          '</td><td class="point-path" title="' +
+          esc(c.reference) +
+          '">' +
+          esc(c.reference) +
+          '</td><td><span class="event-kind">' +
+          esc(c.action) +
+          "</span></td><td>" +
+          esc(c.value || "—") +
+          "</td><td>" +
+          esc(c.origin || c.via || "—") +
+          "</td><td>" +
+          (c.ctlNum || "—") +
+          "</td><td>" +
+          esc(c.result || "ok") +
+          "</td></tr>"
+        );
+      })
+      .join("") +
+    "</tbody></table>";
+  if (nearEnd) target.scrollTop = target.scrollHeight;
+}
+function downloadJSON(name, value) {
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+// --- Recordings: COMTRADE import, channel mapping and playback -------------
+
+async function refreshRecordings() {
+  state.recordings = (await api("/recordings")) || [];
+  if (state.tab === "playback") renderPlayback();
+}
+
+// Analog channels target numeric points; digital channels target boolean,
+// integer and Dbpos status points. The backend re-validates with precise
+// errors, this filter only keeps the list short.
+function mappablePoints(digital) {
+  const kinds = digital
+    ? ["boolean", "integer", "unsigned", "bit-string"]
+    : ["float", "integer", "unsigned"];
+  return (state.detail?.points || []).filter(
+    (p) => p.editable && kinds.includes(p.kind),
+  );
+}
+
+function renderPlayback() {
+  const box = $("#playback-content");
+  if (!state.detail) {
+    box.innerHTML =
+      '<div class="empty-state"><p>' + esc(tr("recEmpty")) + "</p></div>";
+    return;
+  }
+  const gens = (state.detail.generators || []).filter((g) => g.Recording);
+  box.innerHTML =
+    '<div class="stream-grid"><article class="stream-card rec-import"><h3>' +
+    esc(tr("recUpload")) +
+    '</h3><div class="rec-files"><label><span>.cfg</span><input type="file" id="rec-cfg" accept=".cfg,.CFG"></label>' +
+    '<label><span>.dat</span><input type="file" id="rec-dat" accept=".dat,.DAT"></label>' +
+    '<button id="rec-upload" class="button primary">' +
+    esc(tr("recUpload")) +
+    "</button></div><p>" +
+    (language === "zh"
+      ? "COMTRADE 1991/1999/2013 · ASCII、BINARY、BINARY32、FLOAT32。仅存于进程内存。"
+      : "COMTRADE 1991/1999/2013 · ASCII, BINARY, BINARY32, FLOAT32. Kept in memory only.") +
+    "</p></article>" +
+    state.recordings.map(recordingCard).join("") +
+    '<article class="stream-card"><h3>' +
+    esc(tr("recActive")) +
+    "</h3>" +
+    (gens.length
+      ? gens
+          .map(
+            (g) =>
+              '<div class="rec-play"><span class="sim-state' +
+              (g.Running ? " on" : "") +
+              '">' +
+              (g.Running ? tr("simRunning") : g.Paused ? tr("simPaused") : tr("simIdle")) +
+              "</span><strong>" +
+              esc(g.Reference) +
+              "</strong><small>ch #" +
+              g.Channel +
+              " · " +
+              g.IntervalMS +
+              "ms" +
+              (g.Decimation > 1 ? " · ÷" + g.Decimation : "") +
+              (g.Loop ? " · loop" : "") +
+              '</small><button class="button secondary rec-stop" data-ref="' +
+              esc(g.Reference) +
+              '" data-fc="' +
+              esc(g.FC) +
+              '">' +
+              esc(tr("simStop")) +
+              "</button></div>",
+          )
+          .join("")
+      : '<p class="form-note">—</p>') +
+    "</article></div>";
+  $("#rec-upload").onclick = guard(async () => {
+    const cfg = $("#rec-cfg").files[0];
+    const dat = $("#rec-dat").files[0];
+    if (!cfg || !dat) {
+      notify(language === "zh" ? "请选择 cfg 和 dat 两个文件" : "Pick both a cfg and a dat file", true);
+      return;
+    }
+    const form = new FormData();
+    form.append("name", cfg.name.replace(/\.cfg$/i, ""));
+    form.append("cfg", cfg);
+    form.append("dat", dat);
+    const response = await fetch("/api/recordings", { method: "POST", body: form });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || response.statusText);
+    notify(language === "zh" ? "录波已导入" : "Recording imported");
+    await refreshRecordings();
+  });
+  box.querySelectorAll("[data-rec]").forEach((card) => {
+    wireRecordingCard(card.dataset.rec);
+  });
+  box.querySelectorAll(".rec-stop").forEach((button) => {
+    button.onclick = guard(async () => {
+      await api(
+        "/devices/" +
+          state.deviceId +
+          "/generators?reference=" +
+          encodeURIComponent(button.dataset.ref) +
+          "&fc=" +
+          button.dataset.fc,
+        { method: "DELETE" },
+      );
+      await refreshDetail();
+      renderPlayback();
+    });
+  });
+}
+
+function recordingCard(rec) {
+  const channels = rec.channels || [];
+  return (
+    '<article class="stream-card" data-rec="' +
+    esc(rec.id) +
+    '"><h3>' +
+    esc(rec.name) +
+    "</h3><p>" +
+    esc(rec.format) +
+    " · " +
+    (rec.rateHz || "?") +
+    " Hz · " +
+    rec.samples +
+    " " +
+    (language === "zh" ? "点" : "samples") +
+    " · " +
+    new Date(rec.start).toLocaleString() +
+    "</p>" +
+    '<table class="rec-table"><thead><tr><th>#</th><th>ID</th><th>PH</th><th>UNIT</th><th>MIN · MAX</th></tr></thead><tbody>' +
+    channels
+      .map(
+        (c) =>
+          "<tr><td>" +
+          c.index +
+          "</td><td>" +
+          esc(c.id) +
+          (c.digital ? ' <span class="fc ST">D</span>' : "") +
+          "</td><td>" +
+          esc(c.phase || "—") +
+          "</td><td>" +
+          esc(c.unit || "—") +
+          "</td><td>" +
+          (c.digital ? "0 · 1" : esc(fmtNum(c.min)) + " · " + esc(fmtNum(c.max))) +
+          "</td></tr>",
+      )
+      .join("") +
+    "</tbody></table>" +
+    '<div class="rec-map"><span class="field-caption">' +
+    esc(tr("recMap")) +
+    "</span>" +
+    '<div class="rec-map-row"><select class="rec-channel">' +
+    channels
+      .map((c) => '<option value="' + c.index + '">' + c.index + " · " + esc(c.id) + (c.digital ? " (D)" : "") + "</option>")
+      .join("") +
+    '</select><select class="rec-point"></select></div>' +
+    '<div class="rec-map-row"><label>' +
+    esc(tr("recInterval")) +
+    '<input class="rec-interval" type="number" min="100" step="100" value="500"></label>' +
+    "<label>" +
+    esc(tr("recDecimation")) +
+    '<input class="rec-decimation" type="number" min="1" step="1" value="1"></label>' +
+    '<label class="small-check"><input class="rec-loop" type="checkbox" checked><span>' +
+    esc(tr("recLoop")) +
+    "</span></label>" +
+    '<button class="button primary rec-play-btn">' +
+    esc(tr("recPlayback")) +
+    '</button><button class="button secondary rec-delete">' +
+    esc(tr("recDelete")) +
+    "</button></div>" +
+    '<p class="form-note rec-duration"></p></div></article>'
+  );
+}
+
+function fmtNum(v) {
+  if (v === undefined || v === null || Number.isNaN(v)) return "—";
+  return String(Math.round(v * 1000) / 1000);
+}
+
+// Fill the point picker per selected channel and keep the decimation hint in
+// sync with the native sampling rate.
+function wireRecordingCard(id) {
+  const card = document.querySelector('[data-rec="' + CSS.escape(id) + '"]');
+  if (!card) return;
+  const rec = state.recordings.find((r) => r.id === id);
+  if (!rec) return;
+  const channelSelect = card.querySelector(".rec-channel");
+  const pointSelect = card.querySelector(".rec-point");
+  const interval = card.querySelector(".rec-interval");
+  const decimation = card.querySelector(".rec-decimation");
+  const duration = card.querySelector(".rec-duration");
+  const fill = () => {
+    const channel = (rec.channels || [])[Number(channelSelect.value)] || rec.channels[0];
+    pointSelect.innerHTML = mappablePoints(channel?.digital)
+      .map((p) => '<option value="' + esc(pointKey(p)) + '">' + esc(p.reference) + " [" + p.fc + "]</option>")
+      .join("");
+    updateHint();
+  };
+  const updateHint = () => {
+    const intervalMS = Math.max(100, Number(interval.value) || 500);
+    const dec = Math.max(1, Math.round(Number(decimation.value) || 1));
+    const played = Math.ceil((rec.samples || 0) / dec);
+    const seconds = (played * intervalMS) / 1000;
+    duration.textContent =
+      (language === "zh" ? "回放" : "plays") +
+      " " +
+      played +
+      (language === "zh" ? " 点 · " : " values · ") +
+      (seconds >= 60 ? Math.round(seconds / 60) + " min" : Math.round(seconds * 10) / 10 + " s") +
+      (rec.rateHz
+        ? (language === "zh" ? " · 原始 " : " · native ") + rec.rateHz + " Hz" +
+          (dec === 1 && rec.rateHz * intervalMS / 1000 > 1
+            ? (language === "zh" ? " · 建议抽点 ≥ " : " · suggest decimation ≥ ") + Math.round((rec.rateHz * intervalMS) / 1000)
+            : "")
+        : "");
+  };
+  channelSelect.onchange = fill;
+  interval.oninput = updateHint;
+  decimation.oninput = updateHint;
+  fill();
+  card.querySelector(".rec-play-btn").onclick = guard(async () => {
+    const key = pointSelect.value.split("|");
+    await api("/devices/" + state.deviceId + "/generators", {
+      method: "POST",
+      body: {
+        Reference: key[0],
+        FC: key[1],
+        Mode: "sequence",
+        IntervalMS: Math.max(100, Math.round(Number(interval.value) || 500)),
+        Recording: rec.id,
+        Channel: Number(channelSelect.value),
+        Decimation: Math.max(1, Math.round(Number(decimation.value) || 1)),
+        Loop: card.querySelector(".rec-loop").checked,
+      },
+    });
+    await refreshDetail();
+    renderPlayback();
+    notify(language === "zh" ? "回放任务已启动" : "Playback started");
+  });
+  card.querySelector(".rec-delete").onclick = guard(async () => {
+    await api("/recordings/" + rec.id, { method: "DELETE" });
+    await refreshRecordings();
+    await refreshDetail();
+    renderPlayback();
+  });
 }
 async function importDocument(file) {
   const doc = await api("/models", {
@@ -1282,6 +1881,18 @@ $("#clear-log").onclick = () => {
   state.eventFloor = state.events.at(-1)?.id || 0;
   renderEvents();
 };
+const setJournalView = (view) => {
+  state.journalView = view;
+  $("#journal-events").classList.toggle("active", view === "events");
+  $("#journal-controls").classList.toggle("active", view === "controls");
+  $("#event-filter").hidden = view === "controls";
+  $("#control-export").hidden = view !== "controls";
+  renderEvents();
+};
+$("#journal-events").onclick = () => setJournalView("events");
+$("#journal-controls").onclick = () => setJournalView("controls");
+$("#control-export").onclick = () =>
+  downloadJSON("iedlab-controls.json", controlRecords().map((e) => e.control));
 document.querySelectorAll("[data-tab]").forEach((button) => {
   button.onclick = () => {
     state.receiver = null;
@@ -1329,6 +1940,9 @@ events.onmessage = (message) => {
       () => refreshDetail().catch((error) => notify(error.message, true)),
       150,
     );
+  }
+  if (event.kind.startsWith("recording.") && state.tab === "playback") {
+    refreshRecordings().catch((error) => notify(error.message, true));
   }
 };
 events.onopen = () => {

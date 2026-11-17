@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	clientied "github.com/mababaNiubi/go-iec61850/ied"
@@ -30,6 +31,7 @@ type simulation struct {
 	runtime       *simulator.Runtime
 	address, mode string
 	done          <-chan struct{}
+	store         *observedStore
 }
 
 func (s *simulation) failure() error { return s.runtime.Err() }
@@ -61,10 +63,11 @@ func (m *Manager) Start(id string, opt SimulationOptions) (DeviceSummary, error)
 		}
 	}
 	d.controlEnabled.Store(opt.Controls)
+	store := newObservedStore(d.ied, &m.log, id)
 	runtime, err := simulator.Start(context.Background(), d.ied, simulator.Options{
 		Listen: opt.Listen, GOOSE: simulator.GOOSEMode(opt.GOOSE), Interface: opt.Interface,
 		Promiscuous: opt.Promiscuous,
-		Store:       &observedStore{Store: d.ied, log: &m.log, id: id},
+		Store:       store,
 		Observe: func(event simulator.Event) {
 			if event.Err != nil {
 				m.log.add("error", id, event.Err.Error())
@@ -76,11 +79,13 @@ func (m *Manager) Start(id string, opt SimulationOptions) (DeviceSummary, error)
 		},
 	})
 	if err != nil {
+		store.close()
 		d.controlEnabled.Store(false)
 		d.mu.Unlock()
 		return DeviceSummary{}, err
 	}
-	d.run = &simulation{runtime: runtime, address: runtime.Address(), mode: string(runtime.GOOSEMode()), done: runtime.Done()}
+	d.run = &simulation{runtime: runtime, address: runtime.Address(), mode: string(runtime.GOOSEMode()), done: runtime.Done(), store: store}
+	go store.follow(runtime.Done())
 	d.mu.Unlock()
 	m.log.add("simulation.start", id, fmt.Sprintf("MMS listening on %s · GOOSE %s", runtime.Address(), runtime.GOOSEMode()))
 	return d.summary(), nil
@@ -98,6 +103,7 @@ func (m *Manager) Stop(id string) error {
 	if d.run != nil {
 		err = d.run.stop()
 		if err == nil {
+			d.run.store.close()
 			d.run = nil
 		}
 	}
@@ -135,7 +141,7 @@ func (m *Manager) Interlock(id string, blocked bool) error {
 		return err
 	}
 	d.interlocked.Store(blocked)
-	m.log.add("control.interlock", id, fmt.Sprintf("Interlock blocked=%t", blocked))
+	m.log.addControl(ControlRecord{Device: id, Reference: "interlock", Action: "interlock", Value: fmt.Sprintf("blocked=%t", blocked), Via: "sim"})
 	return nil
 }
 
@@ -194,7 +200,10 @@ func (d *device) bindControls(log *journal) {
 			if err := updateFeedback(ctx, d.ied, target, value); err != nil {
 				return err
 			}
-			log.add("control.feedback", d.id, fmt.Sprintf("%s ← %s · origin=%s ctlNum=%d", target, value, string(cmd.OriginID), cmd.Number))
+			log.addControl(ControlRecord{
+				Device: d.id, Reference: c.Reference, Action: "feedback", Value: value.String(),
+				Origin: string(cmd.OriginID), CtlNum: int(cmd.Number), Via: "sim",
+			})
 			return nil
 		})
 		if err != nil {
@@ -231,9 +240,10 @@ func (m *Manager) Operate(ctx context.Context, id, ref string, on bool) error {
 	parts := strings.Split(n.Item, "$")
 	reference := n.Domain + "/" + parts[0] + "." + strings.Join(parts[2:len(parts)-1], ".")
 	if _, err = client.Operate(ctx, reference, mms.Boolean(on), clientied.ControlOptions{InterlockCheck: true}); err != nil {
-		m.log.add("control.denied", id, err.Error())
+		m.log.addControl(ControlRecord{Device: id, Reference: ref, Action: "denied", Value: fmt.Sprintf("%t", on), Origin: "IEDLab", Result: err.Error(), Via: "sim"})
 		return err
 	}
+	m.log.addControl(ControlRecord{Device: id, Reference: ref, Action: "operate", Value: fmt.Sprintf("%t", on), Origin: "IEDLab", Via: "sim"})
 	return client.Conclude(ctx)
 }
 func dialAddress(address string) string {
@@ -250,30 +260,102 @@ func dialAddress(address string) string {
 	return net.JoinHostPort(host, port)
 }
 
+// observedStore traces MMS traffic into the journal. Reads are aggregated per
+// second: a polling client would otherwise flood the bounded journal and evict
+// control records. Writes stay individual because they are rare and matter.
 type observedStore struct {
 	mms.Store
 	log *journal
 	id  string
+
+	reads   sync.Mutex
+	count   int
+	objects map[string]bool
+	order   []string
+	stop    chan struct{}
+	closing sync.Once
+}
+
+func newObservedStore(store mms.Store, log *journal, id string) *observedStore {
+	s := &observedStore{Store: store, log: log, id: id, objects: map[string]bool{}, stop: make(chan struct{})}
+	go s.flushLoop()
+	return s
+}
+
+// follow stops the aggregation shortly after the runtime it observes.
+func (s *observedStore) follow(done <-chan struct{}) {
+	go func() {
+		<-done
+		s.close()
+	}()
+}
+
+func (s *observedStore) close() {
+	s.closing.Do(func() {
+		close(s.stop)
+		s.flush()
+	})
+}
+
+func (s *observedStore) flushLoop() {
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-s.stop:
+			return
+		case <-tick.C:
+			s.flush()
+		}
+	}
+}
+
+func (s *observedStore) flush() {
+	s.reads.Lock()
+	count, objects, order := s.count, s.objects, s.order
+	s.count, s.objects, s.order = 0, map[string]bool{}, nil
+	s.reads.Unlock()
+	s.emit(count, objects, order)
+}
+
+func (s *observedStore) emit(count int, objects map[string]bool, order []string) {
+	if count == 0 {
+		return
+	}
+	names := order
+	if len(names) > 5 {
+		names = names[:5]
+	}
+	message := fmt.Sprintf("mms.read ×%d over %d objects · %s", count, len(objects), strings.Join(names, ", "))
+	if len(order) > 5 {
+		message += fmt.Sprintf(" (+%d more)", len(order)-5)
+	}
+	s.log.add("mms.read", s.id, message)
+}
+
+func (s *observedStore) note(name string) {
+	s.reads.Lock()
+	defer s.reads.Unlock()
+	s.count++
+	if !s.objects[name] {
+		s.objects[name] = true
+		s.order = append(s.order, name)
+	}
 }
 
 func (s *observedStore) ReadBatch(ctx context.Context, accesses []mms.VariableAccess) []mms.ReadResult {
 	results := mms.ReadBatch(ctx, s.Store, accesses)
-	for i, result := range results {
-		if i >= len(accesses) {
-			break
+	for i := range results {
+		if i < len(accesses) {
+			s.note(accesses[i].Name.String())
 		}
-		s.log.add("mms.read", s.id, fmt.Sprintf("%s = %s · %v", accesses[i].Name, result.Value, result.Error))
 	}
 	return results
 }
 
 func (s *observedStore) Read(ctx context.Context, a mms.VariableAccess) (mms.Value, error) {
 	v, err := s.Store.Read(ctx, a)
-	message := fmt.Sprintf("%s = %s", a.Name, v)
-	if err != nil {
-		message = fmt.Sprintf("%s: %v", a.Name, err)
-	}
-	s.log.add("mms.read", s.id, message)
+	s.note(a.Name.String())
 	return v, err
 }
 func (s *observedStore) Write(ctx context.Context, a mms.VariableAccess, v mms.Value) error {
