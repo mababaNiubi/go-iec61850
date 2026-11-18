@@ -124,6 +124,29 @@ Start 管理 TCP 监听、连接、帧链路和后台协议任务；端口填 0 
 
 Memory 模式实际编码、发布并接收 GOOSE 帧。Ethernet 模式指定 Interface 并使用实际网卡 MAC。Observe 是并发事件回调，应快速返回，关闭操作放在回调外。Store 装饰器可记录 MMS 访问。MemoryBus 连接独立运行时，Options.SV 可在共享总线上启动软件采样源。参见[完整站点示例](../../examples/scd/station/README.zh-CN.md)。
 
+## 绑定、验证并重配置采集
+
+`ReadDataSet` 保持一次性便捷读取。需要反复采集时，`BindDataSet` 只读一次有序成员和所选类型，返回的句柄在 `Read` 时复用这些元数据，不再每次轮询逐成员请求类型。`Info()` 给出本地 `GenerationID`（本地计数，不是远端 ConfRev）。
+
+```go
+binding, err := client.BindDataSet(ctx, mms.DomainName("BayIEDCTRL", "LLN0$dsPos"), ied.BindOptions{VerifyEachRead: true})
+if err != nil { return err }
+defer binding.Close()
+snapshot, err := binding.Read(ctx)          // 远端重配置时返回 ErrConfigurationChanged
+info, err := binding.Refresh(ctx)           // 发布下一代
+```
+
+双重读取只能发现"观测到"的变化，不构成原子远端事务，也无法排除未观测到的"改后复原"。开启 `VerifyEachRead` 后，变化返回 `ErrConfigurationChanged`（细节见 `*ied.GenerationChangeError`），绑定转为过期，必须 `Refresh`。`ReadDataSetVerified` 对一次性快照做同样的 CFG-01 双重读取并标记 `Verified`；除非验证过 RCB，`ConfRev` 保持 0 表示未知。报告解码器遇到数据集、版本或成员位图变化时，以同一类型化错误终止订阅，迟到的报告不会更新旧代际。
+
+```go
+err = client.CreateDataSet(ctx, mms.DomainName("BayIEDCTRL", "LLN0$dsDyn"), []mms.VariableAccess{position})
+configured, err := client.ConfigureRCB(ctx, block, ied.RCBConfiguration{DataSet: mms.DomainName("BayIEDCTRL", "LLN0$dsDyn")})
+```
+
+`CreateDataSet` 先在本地校验每个成员，再定义域级列表。`ConfigureRCB` 通过 `Resv` 取得所有权、写入 `DatSet`（由对端递增 `ConfRev`）、重读声明并解析绑定成员；它从不启用报告块，已启用的块会被拒绝。对端拒绝在线字段时原样返回其错误，Fix/Conf/Dyn 限制因此可见。`DeleteDataSet` 返回服务的 `Matched`/`Deleted`；工程静态数据集是"匹配但未删除"。
+
+`Discover` 用一个预算计量每个请求、解码名称和对象（`MaxObjects`、`MaxRequests`、`MaxBytes`），耗尽时在发出更多工作前停止，设置 `Truncated` 和 `TruncationReason`，并保留已完成结果以便加大预算重跑。`BuildModelTree` 把结果整理成设备 → 逻辑节点 → FC → 点位，不臆造对端未返回的语义。`NewSelectionDocument` + `VerifySelection` 逐点重验证已保存的选点（`ok`、`missing`、`type-changed`），不修改远端状态；未知版本文档显式报错。`Capabilities()` 返回已评审的角色/服务清单——未支持的服务不会在线路上广告。
+
 ## 从 SCL 获得 SV 布局，共用一个网卡读取循环
 
 `system.SVStream("MUA/AP1/LD0/MSVCB01")` 返回 `sv.Profile`；`SVStreams(ied, ap)` 枚举该接入点的流，无需先构建 MMS 运行模型。`profile.Layout.Field(member, path)` 按 FCDA 名或序号定位标量，`QualityFor(field)` 查同数据对象的 q。`Field.Decode/Encode` 使用原始 SCL 类型和已检查偏移，包括 SV 中四字节的 Enum、Dbpos、Quality、Check。

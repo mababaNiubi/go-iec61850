@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Declare the reviewed client/server/publisher/subscriber service profile and pin the negotiated MMS advertisement to it.
+- Verify report generations under configuration changes: typed `ErrConfigurationChanged`, verified one-shot snapshots and subscriber termination instead of decoding under a stale declaration.
+- Add reusable dataset bindings with metadata reuse, generation refresh and fail-fast stale reads; bound discovery with request, byte and object budgets that stop deterministically before further work.
+- Add a typed discovery tree and versioned selection documents that revalidate point by point after reconnect.
+- Bind dynamically created domain datasets to report control blocks through an explicit ownership/re-read workflow, and mirror them into the modeled server's dataset registry.
+- Extend the workbench with an acquisition panel (bindings, dynamic datasets, RCB rebind, selection revalidation) and add a runnable feeder acquisition example.
+
 ## 1.4.1 - 2026-11-17
 
 - Animate ST/MX process values with random, ramp, sine and sequence generators that publish through reports, GOOSE and SV while staying independent of the simulator lifecycle.

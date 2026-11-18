@@ -125,6 +125,29 @@ Start owns TCP connections, its listener, frame links and protocol workers. `Add
 
 Memory mode encodes, publishes and receives GOOSE Ethernet frames without a NIC. Ethernet mode requires `Interface` and uses its actual source MAC. `Observe` is an optional concurrent callback for events and errors. Return promptly and perform shutdown outside it. An optional Store decorator can trace real MMS accesses. `MemoryBus` connects independent runtimes, and `Options.SV` starts software sampled-value sources on that bus. See the [station example](../../examples/scd/station/README.md).
 
+## Bind, verify and reconfigure an acquisition
+
+`ReadDataSet` stays a one-shot convenience. For repeated acquisition, `BindDataSet` reads the ordered members and their selected types once and returns a handle whose `Read` reuses that metadata instead of requesting one type per member on every poll. `Info()` reports a local `GenerationID` — a counter, not a remote ConfRev.
+
+```go
+binding, err := client.BindDataSet(ctx, mms.DomainName("BayIEDCTRL", "LLN0$dsPos"), ied.BindOptions{VerifyEachRead: true})
+if err != nil { return err }
+defer binding.Close()
+snapshot, err := binding.Read(ctx)          // ErrConfigurationChanged when the peer reconfigures
+info, err := binding.Refresh(ctx)           // publish the next generation
+```
+
+Double reads detect observed changes; they do not create an atomic remote transaction and cannot exclude an unseen change-and-revert. With `VerifyEachRead` a change returns `ErrConfigurationChanged` (details via `*ied.GenerationChangeError`) and leaves the binding stale until `Refresh`. `ReadDataSetVerified` applies the same CFG-01 double read to a one-shot snapshot and marks it `Verified`; `ConfRev` stays zero-meaning-unknown unless an RCB was verified. A report decoder that sees a changed dataset, revision or inclusion bitmap terminates its subscription with the same typed error, so a late report cannot update the previous generation.
+
+```go
+err = client.CreateDataSet(ctx, mms.DomainName("BayIEDCTRL", "LLN0$dsDyn"), []mms.VariableAccess{position})
+configured, err := client.ConfigureRCB(ctx, block, ied.RCBConfiguration{DataSet: mms.DomainName("BayIEDCTRL", "LLN0$dsDyn")})
+```
+
+`CreateDataSet` validates every member locally before defining a domain list. `ConfigureRCB` takes ownership through `Resv`, writes `DatSet` (the peer bumps `ConfRev` itself), re-reads the declaration and resolves the bound members; it never enables the block, and an enabled block is refused. A peer that denies an online field reports its error unchanged, so Fix/Conf/Dyn restrictions stay visible. `DeleteDataSet` returns the service's `Matched`/`Deleted` result; engineered static datasets are reported as matched-but-not-deleted.
+
+`Discover` charges every request, decoded name and object against one budget (`MaxObjects`, `MaxRequests`, `MaxBytes`); exhaustion stops before further work, sets `Truncated` with a `TruncationReason`, and preserves completed results for a re-run with a larger budget. `BuildModelTree` groups a result into device → logical node → FC → point without inventing semantics the peer did not return. `NewSelectionDocument` + `VerifySelection` revalidate a saved selection point by point (`ok`, `missing`, `type-changed`) without modifying remote state; unknown document versions fail explicitly. `Capabilities()` returns the reviewed role/service profile — unsupported services are not advertised on the wire.
+
 ## Import an SV model and share one reader
 
 `system.SVStream("MUA/AP1/LD0/MSVCB01")` returns an `sv.Profile`; `SVStreams(ied, ap)` enumerates that AP's streams without constructing an MMS runtime. `profile.Layout.Field(member, path)` selects a scalar by FCDA item or index. `QualityFor(field)` finds a modeled q in the same data object. `Field.Decode`/`Encode` use checked offsets and original SCL types, including four-octet SV Enum/Dbpos/Quality/Check.
