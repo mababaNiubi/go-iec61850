@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -178,8 +179,11 @@ func (d *ReportDecoder) Decode(raw mms.InformationReport) (report Report, err er
 			report.TimeOfEntry = v
 		case 4:
 			name, e := v.StringValue()
-			if e != nil || name != d.config.DataSet {
-				return report, fmt.Errorf("ied: report dataset changed")
+			if e != nil {
+				return report, fmt.Errorf("ied: invalid report dataset name")
+			}
+			if name != d.config.DataSet {
+				return report, &GenerationChangeError{What: "report dataset", From: d.config.DataSet, To: name}
 			}
 		case 6:
 			overflow, e := v.Bool()
@@ -194,8 +198,11 @@ func (d *ReportDecoder) Decode(raw mms.InformationReport) (report Report, err er
 			report.EntryID, _ = v.Bytes()
 		case 8:
 			revision, e := v.Uint()
-			if e != nil || revision != uint64(d.config.ConfRev) {
-				return report, fmt.Errorf("ied: report configuration revision changed")
+			if e != nil {
+				return report, fmt.Errorf("ied: invalid report ConfRev")
+			}
+			if revision != uint64(d.config.ConfRev) {
+				return report, &GenerationChangeError{What: "report ConfRev", From: strconv.FormatUint(uint64(d.config.ConfRev), 10), To: strconv.FormatUint(revision, 10)}
 			}
 		case 9:
 			segmented = true
@@ -218,8 +225,14 @@ func (d *ReportDecoder) Decode(raw mms.InformationReport) (report Report, err er
 		return report, e
 	}
 	bits, e = inclusion.BitLength()
-	if e != nil || bits != len(d.config.Members) {
+	if e != nil {
 		return report, fmt.Errorf("ied: invalid report inclusion bitmap")
+	}
+	if bits != len(d.config.Members) {
+		// The inclusion bitmap length is the report's own statement of the
+		// dataset member count; a mismatch means the remote declaration
+		// changed under this decoder's generation.
+		return report, &GenerationChangeError{What: "dataset member count", From: strconv.Itoa(len(d.config.Members)), To: strconv.Itoa(bits)}
 	}
 	included, _ := inclusion.Bytes()
 	mask := make([]bool, len(d.config.Members))
@@ -388,6 +401,16 @@ func (s *ReportSubscription) accept(raw mms.InformationReport) {
 	case s.events <- ReportEvent{Report: report, Err: err}:
 	default:
 		s.err = ErrReportOverflow
+		s.closed = true
+		close(s.events)
+		return
+	}
+	// A changed remote configuration invalidates this generation: the evidence
+	// has been delivered, so terminate the stream. A late report can then
+	// never update the previous generation's consumers; applications rebind
+	// after ErrConfigurationChanged. finish would relock, so update inline.
+	if errors.Is(err, ErrConfigurationChanged) && !s.closed {
+		s.err = err
 		s.closed = true
 		close(s.events)
 	}

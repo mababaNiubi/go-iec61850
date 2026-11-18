@@ -18,6 +18,11 @@ type DataSetSnapshot struct {
 	ConfRev    uint32
 	ReceivedAt time.Time
 	Entries    []ReportEntry
+	// Verified marks a snapshot whose declaration was rechecked after the
+	// values were read (ReadDataSetVerified). ConfRev stays zero-meaning-
+	// unknown for standalone datasets: a local fingerprint is not a remote
+	// revision.
+	Verified bool
 }
 
 // ReadSnapshot obtains current dataset values without treating a historical

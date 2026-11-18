@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -85,6 +86,9 @@ func (m *Manager) ReportHistory(id string, after uint64) (ReportPage, error) {
 	return page, nil
 }
 
+// SnapshotRemote performs a CFG-01 verified current read: the declaration and
+// revision are rechecked after the values, so a mislabeled snapshot from a
+// concurrently reconfigured peer is rejected instead of published.
 func (m *Manager) SnapshotRemote(ctx context.Context, id, domain, item string) (ied.DataSetSnapshot, error) {
 	c, err := m.peer(id)
 	if err != nil {
@@ -99,11 +103,13 @@ func (m *Manager) SnapshotRemote(ctx context.Context, id, domain, item string) (
 	if !ok {
 		return ied.DataSetSnapshot{}, fmt.Errorf("invalid RCB dataset")
 	}
-	snapshot, err := c.services.ReadDataSet(ctx, mms.DomainName(d, member))
+	snapshot, err := c.services.ReadDataSetVerified(ctx, mms.DomainName(d, member), ied.GenerationPolicy{VerifyMembers: true, VerifyTypes: true, VerifyRCB: block})
 	if err != nil {
-		return snapshot, err
+		if errors.Is(err, ied.ErrConfigurationChanged) {
+			m.log.add("report.reconfigured", id, err.Error())
+		}
+		return ied.DataSetSnapshot{}, err
 	}
-	snapshot.ConfRev = info.ConfRev
 	err = c.appendRecord(block, "confirmed-read", ied.Report{DataSet: snapshot.DataSet, ConfRev: snapshot.ConfRev, ReceivedAt: snapshot.ReceivedAt, Entries: snapshot.Entries})
 	return snapshot, err
 }
