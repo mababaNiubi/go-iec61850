@@ -63,11 +63,12 @@ func Capabilities() CapabilityMatrix {
 			// Modeled server role (scl + simulator).
 			{Area: "server", Service: "typed model read, local ST/MX acquisition", Status: Supported, Package: "scl"},
 			{Area: "server", Service: "URCB/BRCB with buffering, segmentation and EntryID resume", Status: Supported, Package: "scl"},
+			{Area: "server", Service: "BRCB ResvTms/Owner reservation", Status: Conditional, Package: "scl", Restriction: "-1/0/positive-second semantics and IP-bytes Owner are copied from the pinned reference implementation, not normative text"},
 			{Area: "server", Service: "RCB online field writes", Status: Conditional, Package: "scl", Restriction: "limited by SCL ReportSettings Fix/Conf/Dyn; dynamically created domain lists can be bound (DS-02)"},
 			{Area: "server", Service: "SPC/DPC controls with virtual actuator callbacks", Status: Supported, Package: "scl"},
 			{Area: "server", Service: "time-activated control (operTm) on the seven-field Oper", Status: Conditional, Package: "scl", Restriction: "requires enhanced security (ctlModel 3/4) and an SCL Oper declaration that includes operTm"},
 			{Area: "server", Service: "GoCB GoEna online enable/disable", Status: Supported, Package: "scl"},
-			{Area: "server", Service: "SVCB modeled control block", Status: Unsupported},
+			{Area: "server", Service: "SVCB modeled control block with SvEna gating", Status: Conditional, Package: "scl/simulator", Restriction: "OptFlds bit assignment is implementation-derived and not verified against normative text"},
 			{Area: "server", Service: "remote read/write access policy hook", Status: Supported, Package: "scl"},
 			{Area: "server", Service: "setting groups with edit reservations", Status: Supported, Package: "scl"},
 			{Area: "server", Service: "additional CDC control models", Status: Unsupported},

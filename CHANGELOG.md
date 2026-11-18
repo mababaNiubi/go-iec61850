@@ -6,6 +6,7 @@
 - Add ACSE password authentication on both roles, with credentials never silently ignored, connection state/lost callbacks, TCP keepalive and a server connection limit.
 - Support time-activated control through operTm on the seven-field Oper layout, explicit immediacy for a zero timestamp, and a remote read/write access policy.
 - Model GoCB online management (GoEna gating, mapped attributes) and read/write client APIs for GoCB/SVCB; extend the TLS policy with CRLs, certificate pinning and peer-certificate access.
+- Model sampled-value control blocks with SvEna gating and BRCB ResvTms/Owner reservation; these follow the pinned reference implementation and are marked implementation-derived (OptFlds bit assignment is not verified against normative text).
 - Add read-only MMS file services (directory/open/read/close) with bounded retrieval, a virtual server-side provider and COMTRADE import from a remote IED in the workbench; verified against the pinned C reference client.
 - Declare the reviewed client/server/publisher/subscriber service profile and pin the negotiated MMS advertisement to it.
 - Verify report generations under configuration changes: typed `ErrConfigurationChanged`, verified one-shot snapshots and subscriber termination instead of decoding under a stale declaration.

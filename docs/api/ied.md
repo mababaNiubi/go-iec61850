@@ -158,7 +158,7 @@ svcb, err := client.ReadSVCB(ctx, mms.DomainName("MUD", "LLN0$MS$MSVCB01"))
 err = client.SetSVCBEnabled(ctx, svcbRef, true)   // SvEna
 ```
 
-Only fields with settled online behavior are written: `GoEna` and `SvEna`. Dataset rebinding and destination-address changes alter the engineered stream layout and are refused instead of silently ignored. The modeled server exposes GoCB attributes and gates GOOSE publication on `GoEna`; SVCB modeling is not implemented, so `ReadSVCB` works only against peers that declare it. Time-activated control uses `ControlOptions.OperTime` against a peer whose Oper declares `operTm` (enhanced security only); zero means immediate. `SetAccessHandler` applies a remote read/write policy without touching local acquisition.
+Only fields with settled online behavior are written: `GoEna` and `SvEna`. Dataset rebinding and destination-address changes alter the engineered stream layout and are refused instead of silently ignored. The modeled server exposes GoCB and SVCB attributes and gates GOOSE/SV publication on `GoEna`/`SvEna`. BRCB reservation reports `ResvTms` (-1 indefinite, 0 free, positive seconds) and `Owner` (client address bytes) with the reference implementation's semantics; these last two are implementation-derived, and the SVCB `OptFlds` bit assignment is not verified against normative text. Time-activated control uses `ControlOptions.OperTime` against a peer whose Oper declares `operTm` (enhanced security only); zero means immediate. `SetAccessHandler` applies a remote read/write policy without touching local acquisition.
 
 ## Secure the transport with TLS
 

@@ -134,6 +134,14 @@ func (d *IED) writeService(ctx context.Context, a mms.VariableAccess, v mms.Valu
 		return true, err
 	}
 	d.mu.Unlock()
+	if handled, err := d.writeSVCB(ctx, a.Name, v); handled {
+		if err != nil {
+			return true, err
+		}
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return true, d.commitLocked(context.WithoutCancel(ctx), mms.Assignment{Name: a.Name, Value: v})
+	}
 	if handled, err := d.writeGoCB(ctx, a.Name, v); handled {
 		if err != nil {
 			return true, err

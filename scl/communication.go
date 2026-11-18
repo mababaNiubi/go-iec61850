@@ -81,6 +81,9 @@ func (d *IED) configureCommunication(ap accessPoint) error {
 			}
 		}
 	}
+	if err := d.addSVCBs(); err != nil {
+		return err
+	}
 	return d.loadSettingInitial()
 }
 

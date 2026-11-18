@@ -20,6 +20,9 @@ type SampledValues struct {
 	NominalFrequency uint16
 	SampleSync       uint8
 	Sample           func(context.Context, uint16, []byte) error
+	// Enabled optionally gates publication; nil publishes every tick. A
+	// disabled source keeps the loop alive without emitting frames.
+	Enabled func() bool
 }
 
 // RunSampledValues publishes to a caller-owned frame link. Cancellation stops
@@ -40,6 +43,9 @@ func RunSampledValues(ctx context.Context, link sv.FrameIO, source SampledValues
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			if source.Enabled != nil && !source.Enabled() {
+				continue
+			}
 			for i := range frame.PDU.ASDUs {
 				a := &frame.PDU.ASDUs[i]
 				a.SampleCount = uint16(counter)

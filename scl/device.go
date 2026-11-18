@@ -26,6 +26,8 @@ type IED struct {
 	sets              map[mms.ObjectName]mms.NamedList
 	streams           map[mms.ObjectName]*Stream
 	gocbs             map[mms.ObjectName]*Stream
+	svcbs             map[mms.ObjectName]*svcb
+	svcbByRef         map[string]*svcb
 	// Protects change notifications and coherent multi-point snapshots.
 	mu            sync.RWMutex
 	feeds         map[*feed]struct{}
@@ -240,6 +242,9 @@ func (d *IED) Read(ctx context.Context, a mms.VariableAccess) (mms.Value, error)
 	}
 	if value, handled, err := d.readService(ctx, a); handled {
 		return value, err
+	}
+	if value, ok := d.svcbField(a.Name); ok {
+		return value, nil
 	}
 	return d.model.Read(ctx, a)
 }

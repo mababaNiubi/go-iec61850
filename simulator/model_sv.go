@@ -57,6 +57,7 @@ func ModelSVSource(model *scl.IED, profile sv.Profile) (SampledValues, error) {
 		fields = append(fields, bindings)
 	}
 	source := SampledValues{Profile: profile.Clone()}
+	source.Enabled = func() bool { return model.SVEnabled(profile.Reference) }
 	source.Sample = func(ctx context.Context, _ uint16, raw []byte) error {
 		values, err := model.ReadSnapshot(ctx, names...)
 		if err != nil {

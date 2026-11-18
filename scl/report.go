@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 	"time"
@@ -79,6 +80,14 @@ type reportBlock struct {
 	overflowEpoch      uint64
 	pending            *reportRecord
 	due, integrity     time.Time
+	// ResvTms follows the reference semantics (implementation-derived, not
+	// normative): -1 reserved indefinitely, 0 not reserved, >0 seconds of
+	// reservation remaining. Owner carries the reserving client's IP bytes.
+	resvTms         int16
+	reserveDeadline time.Time
+	// components preserves the registered attribute order so the whole RCB
+	// structure can be refreshed after a state change.
+	components []string
 }
 
 // Reports enumerates the actual indexed RCB instances available over MMS.
@@ -239,11 +248,108 @@ func (d *IED) addReports(ld, ln string, x reportXML) error {
 			add("PurgeBuf", boolSpec(), mms.Boolean(false))
 			add("EntryID", mms.TypeSpec{Kind: mms.KindOctetString, Length: 8}, mms.OctetString(make([]byte, 8)))
 			add("TimeOfEntry", mms.TypeSpec{Kind: mms.KindBinaryTime, Length: 6}, binaryTime(time.Now()))
+			add("ResvTms", mms.TypeSpec{Kind: mms.KindInteger, Width: 16}, mms.Integer(0))
+		}
+		add("Owner", mms.TypeSpec{Kind: mms.KindOctetString, Length: -64}, mms.OctetString(nil))
+		b.components = make([]string, len(cs))
+		for i, c := range cs {
+			b.components[i] = c.Name
 		}
 		if err := d.addService(name, cs, vs); err != nil {
 			return err
 		}
 		d.reports[name] = b
+	}
+	return nil
+}
+
+// ownerAddress renders the reserving client's address as the Owner octet
+// string: four bytes for IPv4 and sixteen for IPv6, empty when unreserved.
+// This follows the reference implementation's representation.
+func ownerAddress(b *reportBlock) []byte {
+	if b.owner == nil || !b.reserved {
+		return nil
+	}
+	host, _, err := net.SplitHostPort(b.owner.RemoteAddress)
+	if err != nil {
+		host = b.owner.RemoteAddress
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return append([]byte(nil), v4...)
+	}
+	return append([]byte(nil), ip.To16()...)
+}
+
+// syncReportLocked refreshes the modeled RCB structure so a whole-block read
+// observes runtime state, not the creation-time values.
+func (d *IED) syncReportLocked(ctx context.Context, b *reportBlock) error {
+	assignments := make([]mms.Assignment, 0, len(b.components))
+	for _, name := range b.components {
+		n := mms.DomainName(b.info.Name.Domain, b.info.Name.Item+"$"+name)
+		var value mms.Value
+		switch name {
+		case "RptID":
+			value = mms.VisibleString(b.id)
+		case "RptEna":
+			value = mms.Boolean(b.enabled)
+		case "Resv":
+			value = mms.Boolean(b.reserved)
+		case "DatSet":
+			value = mms.VisibleString(b.info.DataSet.String())
+		case "ConfRev":
+			value = mms.Unsigned(uint64(b.info.ConfRev))
+		case "OptFlds":
+			value = bitsValue(b.options, 10)
+		case "BufTm":
+			value = mms.Unsigned(uint64(b.bufferTime.Milliseconds()))
+		case "SqNum":
+			value = mms.Unsigned(uint64(b.sequence))
+		case "TrgOps":
+			value = bitsValue(uint16(b.triggers)<<8, 6)
+		case "IntgPd":
+			value = mms.Unsigned(uint64(b.period.Milliseconds()))
+		case "GI":
+			value = mms.Boolean(false)
+		case "PurgeBuf":
+			value = mms.Boolean(false)
+		case "EntryID":
+			id := b.cursor
+			if !b.enabled && len(b.queue) > 0 {
+				id = b.queue[len(b.queue)-1].id
+			}
+			value = entryID(id)
+		case "TimeOfEntry":
+			if len(b.queue) > 0 {
+				value = binaryTime(b.queue[len(b.queue)-1].timestamp)
+			} else {
+				value = binaryTime(time.Now())
+			}
+		case "ResvTms":
+			value = mms.Integer(int64(b.resvTms))
+		case "Owner":
+			value = mms.OctetString(ownerAddress(b))
+		default:
+			continue
+		}
+		assignments = append(assignments, mms.Assignment{Name: n, Value: value})
+	}
+	if len(assignments) == 0 {
+		return nil
+	}
+	return d.model.SetValues(ctx, assignments...)
+}
+
+// syncAllReportsLocked refreshes every modeled RCB structure. A service write
+// does not identify its block, and the set is small.
+func (d *IED) syncAllReportsLocked(ctx context.Context) error {
+	for _, b := range d.reports {
+		if err := d.syncReportLocked(ctx, b); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -399,8 +505,18 @@ func (d *IED) runReports(ctx context.Context) {
 			d.mu.Lock()
 			for _, b := range d.reports {
 				b.releaseClosed()
+				if b.reserved && b.resvTms > 0 && !b.reserveDeadline.IsZero() && !now.Before(b.reserveDeadline) {
+					// A timed reservation expired: release it exactly as the
+					// reference implementation does.
+					b.reserved = false
+					b.owner = nil
+					b.resvTms = 0
+					b.reserveDeadline = time.Time{}
+					_ = d.syncReportLocked(ctx, b)
+				}
 				if b.pending != nil && !now.Before(b.due) {
 					b.flush()
+					_ = d.syncReportLocked(ctx, b)
 				}
 				if b.triggers&0x08 != 0 && b.period > 0 && len(d.sets[b.info.DataSet].Variables) > 0 && (b.enabled || b.info.Buffered) {
 					if b.integrity.IsZero() {
@@ -420,6 +536,8 @@ func (b *reportBlock) releaseClosed() {
 		b.owner = nil
 		b.enabled = false
 		b.reserved = false
+		b.resvTms = 0
+		b.reserveDeadline = time.Time{}
 		if !b.info.Buffered {
 			b.queue = nil
 			b.pending = nil
@@ -590,6 +708,10 @@ func (d *IED) reportAccessLocked(ctx context.Context, n mms.ObjectName, value *m
 			return mms.Boolean(b.enabled), true, nil
 		case "Resv":
 			return mms.Boolean(b.reserved), true, nil
+		case "ResvTms":
+			return mms.Integer(int64(b.resvTms)), true, nil
+		case "Owner":
+			return mms.OctetString(ownerAddress(b)), true, nil
 		case "SqNum":
 			return mms.Unsigned(uint64(b.sequence)), true, nil
 		case "EntryID":
@@ -668,10 +790,44 @@ func (d *IED) reportAccessLocked(ctx context.Context, n mms.ObjectName, value *m
 			return mms.Value{}, true, mms.TemporarilyUnavailable
 		}
 		b.reserved = on
+		b.reserveDeadline = time.Time{}
 		if on {
 			b.owner = a
+			// A plain Resv write reserves indefinitely; ResvTms mirrors it.
+			if b.info.Buffered {
+				b.resvTms = -1
+			}
 		} else {
 			b.owner = nil
+			b.resvTms = 0
+		}
+	case "ResvTms":
+		// Writer semantics copied from the pinned reference implementation:
+		// -1 reserves indefinitely, 0 releases, a positive value reserves for
+		// that many seconds. Only buffered control blocks declare it.
+		if !b.info.Buffered {
+			return mms.Value{}, true, mms.ObjectAccessDenied
+		}
+		n, err := value.Int()
+		if err != nil || n < -1 || n > 32767 {
+			return mms.Value{}, true, mms.ObjectValueInvalid
+		}
+		if b.enabled && n == 0 {
+			return mms.Value{}, true, mms.TemporarilyUnavailable
+		}
+		b.resvTms = int16(n)
+		b.reserveDeadline = time.Time{}
+		switch {
+		case n == 0:
+			b.reserved = false
+			b.owner = nil
+		case n == -1:
+			b.reserved = true
+			b.owner = a
+		default:
+			b.reserved = true
+			b.owner = a
+			b.reserveDeadline = time.Now().Add(time.Duration(n) * time.Second)
 		}
 	case "RptEna":
 		on, _ := value.Bool()

@@ -157,7 +157,7 @@ svcb, err := client.ReadSVCB(ctx, mms.DomainName("MUD", "LLN0$MS$MSVCB01"))
 err = client.SetSVCBEnabled(ctx, svcbRef, true)   // SvEna
 ```
 
-只写入行为已确定的在线字段：`GoEna` 与 `SvEna`。重绑数据集或修改目的地址会改变工程流布局，一律明确拒绝而非静默忽略。建模服务端提供 GoCB 属性并以 `GoEna` 门控 GOOSE 发布；SVCB 建模尚未实现，`ReadSVCB` 仅对声明了 SVCB 的对端有效。定时控制通过 `ControlOptions.OperTime` 作用于 Oper 声明了 `operTm` 的对端（仅增强安全模型）；零值表示立即执行。`SetAccessHandler` 施加远端读写策略，不影响本地采集。
+只写入行为已确定的在线字段：`GoEna` 与 `SvEna`。重绑数据集或修改目的地址会改变工程流布局，一律明确拒绝而非静默忽略。建模服务端提供 GoCB 与 SVCB 属性，并以 `GoEna`/`SvEna` 门控 GOOSE/SV 发布。BRCB 预留通过 `ResvTms`（-1 永久、0 空闲、正数为秒）和 `Owner`（客户端地址字节）表示，语义取自参考实现；后两者属实现参照，SVCB 的 `OptFlds` 位分配未经标准正文核实。定时控制通过 `ControlOptions.OperTime` 作用于 Oper 声明了 `operTm` 的对端（仅增强安全模型）；零值表示立即执行。`SetAccessHandler` 施加远端读写策略，不影响本地采集。
 
 ## 用 TLS 保护传输
 
