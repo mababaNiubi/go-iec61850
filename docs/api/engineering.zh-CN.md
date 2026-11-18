@@ -110,7 +110,7 @@ TimeOfEntry 是报告时间，对象 t 是源事件时间，ReceivedAt 是本机
 
 ## 接执行器、普通参数和定值区
 
-`OnOperate` 保留普通直接二进制控制接口。`OnControl` 支持六字段 SPC/DPC Oper
+`OnOperate` 保留普通直接二进制控制接口。`OnControl` 支持六字段与七字段（含 operTm）SPC/DPC Oper
 对应的 ctlModel 1～4，处理选择占用、SBO/SBOw、超时、取消和增强命令终结。
 SCL 中需声明对应 SBO/SBOw 和 Cancel。回调执行设备动作、请求的检查，并上送实际反馈。
 

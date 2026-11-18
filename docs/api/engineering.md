@@ -132,7 +132,7 @@ retains the MMS report time. A data object's `t` retains its source timestamp.
 ## Control and configure equipment
 
 `model.OnOperate` retains the ordinary direct binary control interface.
-`model.OnControl` binds a six-field SPC/DPC Oper for ctlModel 1..4 and handles
+`model.OnControl` binds a six- or seven-field (operTm) SPC/DPC Oper for ctlModel 1..4 and handles
 association ownership, SBO/SBOw, expiry, Cancel and enhanced termination.
 SBO/SBOw and Cancel must be declared in the SCL. The callback implements the
 actuator, requested checks and independently acquired feedback.

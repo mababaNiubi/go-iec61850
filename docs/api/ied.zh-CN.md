@@ -43,7 +43,7 @@ _ = result.Acknowledged
 | 3 / `DirectEnhanced` | 写 Oper，等待匹配的命令终结 |
 | 4 / `SBOEnhanced` | 写 SBOw 选择，再写 Oper 并等待终结 |
 
-当前是即时操作，不调度未来 operTm。Test、联锁检查和同期检查通过选项明确传入，由 IED 决定如何执行。
+`ControlOptions.OperTime` 填入 operTm，声明了该字段的对端会按该时间调度执行（仅增强安全模型）；零值表示立即执行。Test、联锁检查和同期检查通过选项明确传入，由 IED 决定如何执行。
 
 非二进制控制先调用 `client.Control(ctx, "LD/LN.object")`，再用 `control.ValueType()` 查询 ctlVal 类型，构造对应的 `data.Integer`、`Unsigned`、`Float32` 等值后调用 `control.Operate`。设备重新配置后重新取得 Control 对象。
 
@@ -120,7 +120,7 @@ defer runtime.Close()
 return runtime.Wait(ctx)
 ```
 
-Start 管理 TCP 监听、连接、帧链路和后台协议任务；端口填 0 时用 `Address()` 取得实际地址。父 ctx 取消或 `Stop(ctx)` 会停止传输，模型仍可更新并重新启动。采集使用 `model.Update`，执行使用 `model.OnControl` 接驱动。建模服务端按 ctlModel 支持六字段 SPC/DPC 的选择和增强终结；`OnOperate` 保留普通直接接口。客户端可根据在线声明操作远端设备的其他控制类型。详见[模型变化与控制终结](engineering.zh-CN.md#定值变化数组和控制终结)。
+Start 管理 TCP 监听、连接、帧链路和后台协议任务；端口填 0 时用 `Address()` 取得实际地址。父 ctx 取消或 `Stop(ctx)` 会停止传输，模型仍可更新并重新启动。采集使用 `model.Update`，执行使用 `model.OnControl` 接驱动。建模服务端按 ctlModel 支持六字段与七字段（含 operTm）SPC/DPC 的选择、增强终结与定时执行；`OnOperate` 保留普通直接接口。客户端可根据在线声明操作远端设备的其他控制类型。详见[模型变化与控制终结](engineering.zh-CN.md#定值变化数组和控制终结)。
 
 Memory 模式实际编码、发布并接收 GOOSE 帧。Ethernet 模式指定 Interface 并使用实际网卡 MAC。Observe 是并发事件回调，应快速返回，关闭操作放在回调外。Store 装饰器可记录 MMS 访问。MemoryBus 连接独立运行时，Options.SV 可在共享总线上启动软件采样源。参见[完整站点示例](../../examples/scd/station/README.zh-CN.md)。
 
@@ -150,11 +150,13 @@ configured, err := client.ConfigureRCB(ctx, block, ied.RCBConfiguration{DataSet:
 ## 在线管理 GOOSE 与 SV 控制块
 
 ```go
-gcb, err := client.ReadGoCB(ctx, mms.DomainName("BayIEDCTRL", "LLN0$GO$gcbPos"))
-err = client.SetGoCBEnabled(ctx, gcbRef, false)   // GoEna 控制发布
+gocb := mms.DomainName("BayIEDCTRL", "LLN0$GO$gcbPos")
+gcb, err := client.ReadGoCB(ctx, gocb)
+err = client.SetGoCBEnabled(ctx, gocb, false)   // GoEna 控制发布
 
-svcb, err := client.ReadSVCB(ctx, mms.DomainName("MUD", "LLN0$MS$MSVCB01"))
-err = client.SetSVCBEnabled(ctx, svcbRef, true)   // SvEna
+svcbName := mms.DomainName("MUALD0", "LLN0$MS$MSVCB01")
+svcb, err := client.ReadSVCB(ctx, svcbName)
+err = client.SetSVCBEnabled(ctx, svcbName, true) // SvEna
 ```
 
 只写入行为已确定的在线字段：`GoEna` 与 `SvEna`。重绑数据集或修改目的地址会改变工程流布局，一律明确拒绝而非静默忽略。建模服务端提供 GoCB 与 SVCB 属性，并以 `GoEna`/`SvEna` 门控 GOOSE/SV 发布。BRCB 预留通过 `ResvTms`（-1 永久、0 空闲、正数为秒）和 `Owner`（客户端地址字节）表示，语义取自参考实现；后两者属实现参照，SVCB 的 `OptFlds` 位分配未经标准正文核实。定时控制通过 `ControlOptions.OperTime` 作用于 Oper 声明了 `operTm` 的对端（仅增强安全模型）；零值表示立即执行。`SetAccessHandler` 施加远端读写策略，不影响本地采集。
@@ -170,7 +172,7 @@ go server.ServeTLS(listener, policy)
 client, err := mms.DialTLS(ctx, address, mms.Config{}, mms.TLSPolicy{RootCAs: roots, ServerName: "server.ied.test"})
 ```
 
-零值策略不可用是有意设计：服务端必须提供证书，客户端证书校验必须提供 `ClientCAs`。`MinVersion` 默认 TLS 1.2，更低版本直接拒绝。`InsecureSkipVerify` 未同时设置 `AllowInsecure` 时会被拒绝；即便显式开启，事件中的 `Verified` 仍为 false，审计不会把未验证的对端当成已验证。`OnEvent` 收到脱敏事件（不含证书或密钥材料）。明文与安全端点两个方向都不互通——不存在静默降级。TLS 1.3 的密码套件由 Go 运行时固定，`CipherSuites` 只约束 TLS 1.2。
+零值策略不可用是有意设计：服务端必须提供证书，客户端证书校验必须提供 `ClientCAs`。`MinVersion` 默认 TLS 1.2，更低版本直接拒绝。`InsecureSkipVerify` 未同时设置 `AllowInsecure` 时会被拒绝；即便显式开启，事件中的 `Verified` 仍为 false，审计不会把未验证的对端当成已验证。`OnEvent` 收到脱敏事件（不含证书或密钥材料）。明文与安全端点两个方向都不互通——不存在静默降级。TLS 1.3 的密码套件由 Go 运行时固定，`CipherSuites` 只约束 TLS 1.2。`CRLs` 把吊销列表纳入对端校验，`KnownCertificates` 固定可接受的对端叶证书（其他有效链也拒绝），`client.PeerCertificate()` 返回已验证的对端叶证书供本地策略判断。
 
 ## 从 SCL 获得 SV 布局，共用一个网卡读取循环
 

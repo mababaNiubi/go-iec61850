@@ -43,7 +43,7 @@ _ = result.Acknowledged
 | 3 / `DirectEnhanced` | Write Oper and await matching CommandTermination |
 | 4 / `SBOEnhanced` | Write SBOw selection, then Oper and await termination |
 
-The builder follows declared component order and optional ctlNum/operTm fields. Operations are immediate; this API does not schedule a future operTm. Test, interlock and synchrocheck requests are explicit options, with execution decided by the IED.
+The builder follows declared component order and optional ctlNum/operTm fields. `ControlOptions.OperTime` fills operTm, so a peer that declares it schedules execution at that time (enhanced security only); zero means immediate. Test, interlock and synchrocheck requests are explicit options, with execution decided by the IED.
 
 For a nonbinary control, first call `client.Control(ctx, "LD/LN.object")`, then `control.ValueType()`. Construct a matching `data.Integer`, `data.Unsigned`, `data.Float32` or other declared value and call `control.Operate`. Obtain a new control object after device reconfiguration.
 
@@ -121,7 +121,7 @@ defer runtime.Close()
 return runtime.Wait(ctx)
 ```
 
-Start owns TCP connections, its listener, frame links and protocol workers. `Address()` reports the actual address when using port zero. Parent cancellation or `Stop(ctx)` stops transport; the model remains available to update and restart. Local acquisitions use `model.Update`; hardware execution uses `model.OnControl`. The modeled six-field SPC/DPC server supports selection and enhanced termination according to ctlModel; `OnOperate` retains the direct-normal interface. Other control types exposed by a remote IED can be used by the client according to their online declarations. See [control completion and model limits](engineering.md#configuration-changes-arrays-and-control-completion).
+Start owns TCP connections, its listener, frame links and protocol workers. `Address()` reports the actual address when using port zero. Parent cancellation or `Stop(ctx)` stops transport; the model remains available to update and restart. Local acquisitions use `model.Update`; hardware execution uses `model.OnControl`. The modeled SPC/DPC server accepts the six-field Oper and the seven-field form with operTm, supporting selection, enhanced termination and time-activated execution according to ctlModel; `OnOperate` retains the direct-normal interface. Other control types exposed by a remote IED can be used by the client according to their online declarations. See [control completion and model limits](engineering.md#configuration-changes-arrays-and-control-completion).
 
 Memory mode encodes, publishes and receives GOOSE Ethernet frames without a NIC. Ethernet mode requires `Interface` and uses its actual source MAC. `Observe` is an optional concurrent callback for events and errors. Return promptly and perform shutdown outside it. An optional Store decorator can trace real MMS accesses. `MemoryBus` connects independent runtimes, and `Options.SV` starts software sampled-value sources on that bus. See the [station example](../../examples/scd/station/README.md).
 
@@ -151,11 +151,13 @@ configured, err := client.ConfigureRCB(ctx, block, ied.RCBConfiguration{DataSet:
 ## Manage GOOSE and SV control blocks online
 
 ```go
-gcb, err := client.ReadGoCB(ctx, mms.DomainName("BayIEDCTRL", "LLN0$GO$gcbPos"))
-err = client.SetGoCBEnabled(ctx, gcbRef, false)   // GoEna gates publication
+gocb := mms.DomainName("BayIEDCTRL", "LLN0$GO$gcbPos")
+gcb, err := client.ReadGoCB(ctx, gocb)
+err = client.SetGoCBEnabled(ctx, gocb, false)   // GoEna gates publication
 
-svcb, err := client.ReadSVCB(ctx, mms.DomainName("MUD", "LLN0$MS$MSVCB01"))
-err = client.SetSVCBEnabled(ctx, svcbRef, true)   // SvEna
+svcbName := mms.DomainName("MUALD0", "LLN0$MS$MSVCB01")
+svcb, err := client.ReadSVCB(ctx, svcbName)
+err = client.SetSVCBEnabled(ctx, svcbName, true) // SvEna
 ```
 
 Only fields with settled online behavior are written: `GoEna` and `SvEna`. Dataset rebinding and destination-address changes alter the engineered stream layout and are refused instead of silently ignored. The modeled server exposes GoCB and SVCB attributes and gates GOOSE/SV publication on `GoEna`/`SvEna`. BRCB reservation reports `ResvTms` (-1 indefinite, 0 free, positive seconds) and `Owner` (client address bytes) with the reference implementation's semantics; these last two are implementation-derived, and the SVCB `OptFlds` bit assignment is not verified against normative text. Time-activated control uses `ControlOptions.OperTime` against a peer whose Oper declares `operTm` (enhanced security only); zero means immediate. `SetAccessHandler` applies a remote read/write policy without touching local acquisition.
@@ -171,7 +173,7 @@ go server.ServeTLS(listener, policy)
 client, err := mms.DialTLS(ctx, address, mms.Config{}, mms.TLSPolicy{RootCAs: roots, ServerName: "server.ied.test"})
 ```
 
-The zero policy is unusable by design: a server needs a certificate, and client-certificate verification needs `ClientCAs`. `MinVersion` defaults to TLS 1.2 and lower values are rejected. `InsecureSkipVerify` is refused unless `AllowInsecure` is also set; even then the reported `SecurityEvent.Verified` stays false, so an audit never mistakes an unverified peer for a verified one. `OnEvent` receives redacted observations (no certificate or key material). Plaintext and secured endpoints do not interoperate in either direction — there is no silent downgrade. TLS 1.3 cipher suites are fixed by the Go runtime; `CipherSuites` only restricts TLS 1.2.
+The zero policy is unusable by design: a server needs a certificate, and client-certificate verification needs `ClientCAs`. `MinVersion` defaults to TLS 1.2 and lower values are rejected. `InsecureSkipVerify` is refused unless `AllowInsecure` is also set; even then the reported `SecurityEvent.Verified` stays false, so an audit never mistakes an unverified peer for a verified one. `OnEvent` receives redacted observations (no certificate or key material). Plaintext and secured endpoints do not interoperate in either direction — there is no silent downgrade. TLS 1.3 cipher suites are fixed by the Go runtime; `CipherSuites` only restricts TLS 1.2. `CRLs` adds revocation lists to peer verification, `KnownCertificates` pins the accepted peer leaf (any other valid chain is refused), and `client.PeerCertificate()` exposes the verified peer leaf for local policy decisions.
 
 ## Import an SV model and share one reader
 
