@@ -319,6 +319,19 @@ func (m *Manager) Handler() http.Handler {
 		v, e := m.VerifyRemoteSelection(r.Context(), r.PathValue("id"), q)
 		respond(w, v, e)
 	})
+	mux.HandleFunc("GET /api/connections/{id}/files", func(w http.ResponseWriter, r *http.Request) {
+		max, _ := strconv.Atoi(r.URL.Query().Get("max"))
+		v, e := m.RemoteFiles(r.Context(), r.PathValue("id"), r.URL.Query().Get("spec"), max)
+		respond(w, v, e)
+	})
+	mux.HandleFunc("POST /api/connections/{id}/recordings", func(w http.ResponseWriter, r *http.Request) {
+		var q struct{ CFG, DAT string }
+		if !decode(w, r, &q) {
+			return
+		}
+		v, e := m.FetchRemoteRecording(r.Context(), r.PathValue("id"), q.CFG, q.DAT)
+		respond(w, v, e)
+	})
 	mux.HandleFunc("GET /api/events", m.eventStream)
 	files, _ := fs.Sub(webFiles, "web")
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {

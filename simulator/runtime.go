@@ -51,6 +51,10 @@ type Options struct {
 	Observe     func(Event)     // concurrent callback; must return promptly, never call Stop here
 	Bus         *MemoryBus      // optional shared software station bus for multiple runtimes
 	SV          []SampledValues // software sources published on Bus
+	// Files optionally serves read-only MMS file services from this virtual
+	// store, for example disturbance records. Nil keeps the file services
+	// unadvertised.
+	Files mms.FileProvider
 }
 
 // Runtime owns its listener, accepted associations, links and protocol workers.
@@ -92,6 +96,9 @@ func Start(ctx context.Context, model *scl.IED, options Options) (*Runtime, erro
 	server, err := model.NewServer(options.MMS)
 	if err != nil {
 		return nil, err
+	}
+	if options.Files != nil {
+		server.SetFileProvider(options.Files)
 	}
 	if options.Store != nil {
 		server.Store = options.Store

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a TLS transport under the unchanged ISO/ACSE/MMS stack with strict policy validation, mutual certificate authentication, redacted security events and no silent downgrade.
+- Add read-only MMS file services (directory/open/read/close) with bounded retrieval, a virtual server-side provider and COMTRADE import from a remote IED in the workbench; verified against the pinned C reference client.
 - Declare the reviewed client/server/publisher/subscriber service profile and pin the negotiated MMS advertisement to it.
 - Verify report generations under configuration changes: typed `ErrConfigurationChanged`, verified one-shot snapshots and subscriber termination instead of decoding under a stale declaration.
 - Add reusable dataset bindings with metadata reuse, generation refresh and fail-fast stale reads; bound discovery with request, byte and object budgets that stop deterministically before further work.

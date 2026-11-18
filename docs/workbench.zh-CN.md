@@ -121,6 +121,8 @@ flowchart LR
 | `GET /api/recordings` / `GET /api/recordings/{id}` | 列出或查看已导入录波 |
 | `DELETE /api/recordings/{id}` | 删除录波，同时停止依赖它的回放任务 |
 | `GET /api/controls?after=0` | 结构化控制历史（`control.record` 事件） |
+| `GET /api/connections/{id}/files?spec=fault&max=64` | 列出对端虚拟文件（只读 MMS 文件服务） |
+| `POST /api/connections/{id}/recordings` | 取回远端 COMTRADE 文件对 `{"CFG":"fault.cfg","DAT":"fault.dat"}` 存入录波库，可直接回放 |
 | `POST /api/connections/{id}/bindings` | 绑定 `{"Domain":"…","Item":"LLN0$dsPos","VerifyEachRead":true}`；`GET` 列表，`POST …/bindings/read` 按代际读取，`DELETE` 解绑 |
 | `POST /api/connections/{id}/datasets` | 创建动态数据集 `{"Domain":"…","Item":"LLN0$dsDyn","Members":[{"Domain":"…","Item":"XCBR1$ST$Pos$stVal"}]}` |
 | `DELETE /api/connections/{id}/datasets?domain=…&item=…` | 删除远端可删除的列表 |

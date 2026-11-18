@@ -126,6 +126,8 @@ The API uses JSON except for raw SCL uploads. Successful responses contain the r
 | `GET /api/recordings` / `GET /api/recordings/{id}` | List or inspect imported captures |
 | `DELETE /api/recordings/{id}` | Delete, stopping playback that still reads it |
 | `GET /api/controls?after=0` | Structured control history (`control.record` events) |
+| `GET /api/connections/{id}/files?spec=fault&max=64` | List the peer's virtual file store (read-only MMS file services) |
+| `POST /api/connections/{id}/recordings` | Fetch a remote COMTRADE pair `{"CFG":"fault.cfg","DAT":"fault.dat"}` into the recordings store, ready for playback |
 | `POST /api/connections/{id}/bindings` | Bind `{"Domain":"…","Item":"LLN0$dsPos","VerifyEachRead":true}`; `GET` lists, `POST …/bindings/read` acquires through the generation, `DELETE` closes |
 | `POST /api/connections/{id}/datasets` | Create a dynamic dataset `{"Domain":"…","Item":"LLN0$dsDyn","Members":[{"Domain":"…","Item":"XCBR1$ST$Pos$stVal"}]}` |
 | `DELETE /api/connections/{id}/datasets?domain=…&item=…` | Delete a remotely deletable list |

@@ -2,6 +2,7 @@
 package workbench
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -183,4 +184,52 @@ func (c *connection) closeBindings() {
 		binding.Close()
 	}
 	c.bindings = nil
+}
+
+// RemoteFiles lists the peer's virtual file store. Bounds mirror the SDK
+// limits so one request cannot pull an unbounded directory.
+func (m *Manager) RemoteFiles(ctx context.Context, id, spec string, max int) ([]mms.FileEntry, error) {
+	c, err := m.peer(id)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := c.services.MMS().FileDirectory(ctx, spec, mms.FileLimits{MaxEntries: max})
+	if err != nil && !errors.Is(err, mms.ErrFileLimit) {
+		return nil, err
+	}
+	m.log.add("file.directory", id, fmt.Sprintf("%q · %d entries", spec, len(entries)))
+	return entries, nil
+}
+
+// FetchRemoteRecording retrieves one COMTRADE pair from the peer into the
+// workspace recordings, then it can be replayed with the existing playback
+// path. Files stay in memory; transport success does not validate the record,
+// so the COMTRADE parser still runs and reports its own errors.
+func (m *Manager) FetchRemoteRecording(ctx context.Context, id, cfgName, datName string) (Recording, error) {
+	c, err := m.peer(id)
+	if err != nil {
+		return Recording{}, err
+	}
+	limits := mms.FileLimits{MaxBytes: recordingDatLimit, MaxEntries: 64}
+	read := func(name string) ([]byte, error) {
+		var buf bytes.Buffer
+		if _, err := c.services.MMS().FetchFile(ctx, name, &buf, limits); err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		return buf.Bytes(), nil
+	}
+	cfg, err := read(cfgName)
+	if err != nil {
+		return Recording{}, err
+	}
+	dat, err := read(datName)
+	if err != nil {
+		return Recording{}, err
+	}
+	rec, err := m.ImportRecording(cfgName, cfg, dat)
+	if err != nil {
+		return Recording{}, err
+	}
+	m.log.add("file.fetch", id, fmt.Sprintf("%s + %s · %d samples · replay ready", cfgName, datName, rec.Samples))
+	return rec, nil
 }

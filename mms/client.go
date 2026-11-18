@@ -48,6 +48,7 @@ type Client struct {
 	concluded    chan struct{}
 	concludeOnce sync.Once
 	reports      chan InformationReport
+	fileHandles  map[int32]*FileHandle
 }
 
 // Dial establishes an ISO/MMS association at address (host:port). ctx bounds setup and
@@ -97,6 +98,7 @@ func (c *Client) Done() <-chan struct{} { return c.done }
 // call concurrently.
 func (c *Client) Err() error { c.mu.Lock(); defer c.mu.Unlock(); return c.err }
 func (c *Client) shutdown(err error) {
+	c.closeFileHandles()
 	c.mu.Lock()
 	if c.err != nil {
 		c.mu.Unlock()
@@ -223,6 +225,12 @@ func (c *Client) receive() {
 	}
 }
 func (c *Client) call(ctx context.Context, request []byte, responseTag byte) (ber.Element, error) {
+	return c.callTag(ctx, request, responseTag, 0)
+}
+
+// callTag performs one confirmed call and requires the response service to
+// carry the expected (tag, high) pair. High is zero for low tag numbers.
+func (c *Client) callTag(ctx context.Context, request []byte, responseTag, responseHigh byte) (ber.Element, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.RequestTimeout)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
@@ -269,7 +277,7 @@ func (c *Client) call(ctx context.Context, request []byte, responseTag byte) (be
 		if result.err != nil {
 			return ber.Element{}, result.err
 		}
-		if result.service.Tag != responseTag {
+		if result.service.Tag != responseTag || result.service.High != responseHigh {
 			c.shutdown(ErrProtocol)
 			return ber.Element{}, ErrProtocol
 		}

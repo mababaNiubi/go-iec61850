@@ -53,7 +53,7 @@ func Capabilities() CapabilityMatrix {
 			{Area: "client", Service: "current dataset snapshot (confirmed read)", Status: Supported, Package: "ied"},
 			{Area: "client", Service: "immediate controls (direct/SBO, normal/enhanced security)", Status: Supported, Package: "ied"},
 			{Area: "client", Service: "setting group read/edit/confirm/activate", Status: Supported, Package: "ied"},
-			{Area: "client", Service: "MMS files", Status: Unsupported},
+			{Area: "client", Service: "MMS file directory/open/read/close", Status: Conditional, Package: "mms", Restriction: "read-only retrieval; delete, rename, obtainFile and journals are not implemented or advertised"},
 			{Area: "client", Service: "journals, MMS cancel, rename", Status: Unsupported},
 			{Area: "client", Service: "TLS-secured transport (IEC 62351-3 style)", Status: Conditional, Package: "mms", Restriction: "transport confidentiality/integrity and optional mutual certificate authentication only; not IEC 62351-4 end-to-end security, ACSE authentication or role-based authorization"},
 			{Area: "client", Service: "ACSE authentication mechanisms", Status: Unsupported},
@@ -65,6 +65,7 @@ func Capabilities() CapabilityMatrix {
 			{Area: "server", Service: "SPC/DPC controls with virtual actuator callbacks", Status: Supported, Package: "scl"},
 			{Area: "server", Service: "setting groups with edit reservations", Status: Supported, Package: "scl"},
 			{Area: "server", Service: "additional CDC control models", Status: Unsupported},
+			{Area: "server", Service: "read-only MMS file services", Status: Conditional, Package: "mms/simulator", Restriction: "requires an explicit virtual FileProvider; no host paths are exposed and no write services exist"},
 			{Area: "server", Service: "online GoCB/SVCB management", Status: Unsupported},
 
 			// Publisher/subscriber roles.

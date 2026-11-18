@@ -206,6 +206,25 @@ func SendMeasurement(ctx context.Context, association *mms.Association, value in
 
 回调应使用`association.Context()`控制生命周期，并在`Serve`前设置。这个API不会自动订阅设备值，也没有配置BRCB/URCB。能直接运行的两端例子：[report](../../examples/mms/report/main.go)。
 
+## 读取录波等远端文件
+
+MMS 文件服务在此为只读：目录、打开、读取、关闭。删除、重命名和 obtainFile 有意不实现，也不在能力广告中。
+
+```go
+entries, err := client.FileDirectory(ctx, "fault", mms.FileLimits{})
+handle, err := client.OpenFile(ctx, "fault-001.cfg", 0)
+for { data, more, err := handle.Read(ctx); if !more { break } }
+err = handle.Close(ctx)
+
+// 一次取回，写入调用方存储，读取过程中即受字节上限约束。
+var buf bytes.Buffer
+entry, err := client.FetchFile(ctx, "fault-001.dat", &buf, mms.FileLimits{MaxBytes: 16 << 20})
+```
+
+文件名为逻辑 MMS 名称，不是主机路径：客户端在发送前拒绝 `..`、绝对路径和反斜杠，服务端在交给 provider 前再校验一次。`FileLimits.MaxBytes` 在读取过程中强制，而不只依赖声明大小；所有退出路径都会关闭句柄。服务端实现 `mms.FileProvider` 并在 `Serve` 前调用 `server.SetFileProvider`；只有绑定 provider 时，协商广告才会包含只读文件位。`simulator.Options.Files` 可直接透传。
+
+报文编码以固定版本的 libiec61850 v1.6.2.1 参考实现为准；Go 服务端已用该独立 C 客户端验证（目录、打开、读取、关闭及逐字节内容一致）。传输成功不代表 COMTRADE 合法，仍需单独解析。
+
 ## 创建自己的 MMS 服务端
 
 用Model注册变量，或实现Store把读写接入业务。下面函数运行到ctx取消，再关闭并等待连接处理结束：

@@ -33,6 +33,7 @@ type Server struct {
 	closed       bool
 	raw          map[net.Conn]struct{}
 	lists        map[ObjectName]NamedList
+	files        FileProvider
 	wg           sync.WaitGroup
 	cancel       context.CancelFunc
 }
@@ -50,6 +51,9 @@ type Association struct {
 	lists         map[ObjectName]NamedList
 	active        map[uint32]struct{}
 	concluded     bool
+	fileMu        sync.Mutex
+	files         map[int32]*fileHandle
+	nextFrsm      int32
 }
 
 // NewServer validates configuration and creates a server around a concurrency-safe Store.
@@ -197,7 +201,7 @@ func (s *Server) serveConnection(raw net.Conn) {
 func (s *Server) serveSession(raw net.Conn) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	local := localParameters(s.cfg)
+	local := s.localParameters()
 	params := local
 	conn, err := iso.Accept(ctx, raw, s.cfg.ISO, func(request []byte) ([]byte, error) {
 		peer, err := decodeInitiate(request, 0xa8)
@@ -213,7 +217,7 @@ func (s *Server) serveSession(raw net.Conn) {
 	defer conn.Close()
 	a := &Association{server: s, conn: conn, params: params, RemoteAddress: raw.RemoteAddr().String(), ctx: ctx, sendToken: make(chan struct{}, 1), lists: make(map[ObjectName]NamedList), active: make(map[uint32]struct{})}
 	var workers sync.WaitGroup
-	defer func() { cancel(); conn.Close(); workers.Wait() }()
+	defer func() { cancel(); conn.Close(); a.closeFiles(); workers.Wait() }()
 	if s.OnAssociation != nil {
 		workers.Add(1)
 		go func() { defer workers.Done(); s.OnAssociation(a) }()
@@ -364,6 +368,23 @@ func (a *Association) dispatch(m envelope, actions *responseActions) []byte {
 	}
 	fail := func(err error) []byte { return a.failure(id, err) }
 	switch e.Tag {
+	case 0xbf:
+		// High tag numbers: read-only file services.
+		switch e.High {
+		case 0x48:
+			return a.fileOpen(id, e)
+		case 0x4d:
+			return a.fileDirectory(id, e)
+		}
+		return reject(id, 1, 1)
+	case 0x9f:
+		switch e.High {
+		case 0x49:
+			return a.fileRead(id, e)
+		case 0x4a:
+			return a.fileClose(id, e)
+		}
+		return reject(id, 1, 1)
 	case 0x82:
 		if len(e.Bytes) != 0 {
 			return fail(ErrProtocol)

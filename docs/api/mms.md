@@ -206,6 +206,25 @@ func SendMeasurement(ctx context.Context, association *mms.Association, value in
 
 Set the callback before `Serve` and use `association.Context()` to bound background work to the association lifetime. This API does not automatically monitor device values or configure BRCB/URCB. The runnable [report example](../../examples/mms/report/main.go) includes both endpoints.
 
+## Retrieve disturbance files
+
+MMS file services are read-only: directory, open, read and close. Delete, rename and obtainFile are deliberately absent and are not advertised.
+
+```go
+entries, err := client.FileDirectory(ctx, "fault", mms.FileLimits{})
+handle, err := client.OpenFile(ctx, "fault-001.cfg", 0)
+for { data, more, err := handle.Read(ctx); if !more { break } }
+err = handle.Close(ctx)
+
+// One-call retrieval into caller-owned storage, bounded while reading.
+var buf bytes.Buffer
+entry, err := client.FetchFile(ctx, "fault-001.dat", &buf, mms.FileLimits{MaxBytes: 16 << 20})
+```
+
+Names are logical MMS names, never host paths: the client rejects `..`, absolute paths and backquotes before any request, and the server validates them again before the provider sees them. `FileLimits.MaxBytes` is enforced while reading, not only from the declared size, and handles are closed on every exit path. Server side, implement `mms.FileProvider` and call `server.SetFileProvider` before `Serve`; the negotiated advertisement gains the read-only file bits only when a provider is bound. `simulator.Options.Files` passes a provider through.
+
+Wire encoding follows the pinned libiec61850 v1.6.2.1 reference; the Go server is verified against that independent C client (directory, open, read, close, byte-identical content). Transport success does not validate a COMTRADE record: parse it separately.
+
 ## Create an MMS server
 
 Register variables in a `Model`, or implement `Store` to connect reads and writes to your application. The following function serves until its context is canceled, then shuts down and waits for serving to finish:

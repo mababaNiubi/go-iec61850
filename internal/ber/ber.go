@@ -18,8 +18,13 @@ const (
 )
 
 // Element is one BER tag and its content, excluding its header and any EOC.
+// High tag numbers use the two-octet identifier form: Tag keeps the leading
+// octet (0xbf or 0x9f) and High holds the following tag-number octet. A zero
+// High means the single-octet low form, so comparisons on Tag alone keep
+// working for every existing MMS service.
 type Element struct {
 	Tag   byte
+	High  byte
 	Bytes []byte
 }
 
@@ -40,10 +45,27 @@ func parse(b []byte, depth int) (Element, int, error) {
 		return Element{}, 0, errors.New("ber: truncated header")
 	}
 	tag := b[0]
-	if tag == 0 || tag&0x1f == 0x1f {
-		return Element{}, 0, errors.New("ber: unexpected EOC or unsupported high tag")
+	if tag == 0 {
+		return Element{}, 0, errors.New("ber: unexpected end-of-contents")
 	}
-	pos, length := 2, int(b[1])
+	// High tag numbers carry a second identifier octet. Multi-octet tag
+	// numbers (continuation bit set) are outside the MMS subset.
+	var high byte
+	header := 1
+	if tag&0x1f == 0x1f {
+		if len(b) < 3 {
+			return Element{}, 0, errors.New("ber: truncated high tag")
+		}
+		if b[1]&0x80 != 0 {
+			return Element{}, 0, errors.New("ber: multi-octet tag numbers are unsupported")
+		}
+		if b[1] < 0x1f {
+			return Element{}, 0, errors.New("ber: non-minimal high tag form")
+		}
+		high = b[1]
+		header = 2
+	}
+	pos, length := header+1, int(b[header])
 	if length == 0x80 {
 		if tag&0x20 == 0 {
 			return Element{}, 0, errors.New("ber: primitive indefinite length")
@@ -53,14 +75,14 @@ func parse(b []byte, depth int) (Element, int, error) {
 				return Element{}, 0, errors.New("ber: missing end-of-contents")
 			}
 			if b[pos] == 0 && b[pos+1] == 0 {
-				return Element{tag, b[2:pos]}, pos + 2, nil
+				return Element{tag, high, b[header+1 : pos]}, pos + 2, nil
 			}
 			_, n, err := parse(b[pos:], depth+1)
 			if err != nil {
 				return Element{}, 0, err
 			}
 			pos += n
-			if pos-2 > MaxElementSize {
+			if pos-header-1 > MaxElementSize {
 				return Element{}, 0, errors.New("ber: element size limit exceeded")
 			}
 		}
@@ -83,7 +105,7 @@ func parse(b []byte, depth int) (Element, int, error) {
 	if length > len(b)-pos {
 		return Element{}, 0, errors.New("ber: truncated content")
 	}
-	return Element{tag, b[pos : pos+length]}, pos + length, nil
+	return Element{tag, high, b[pos : pos+length]}, pos + length, nil
 }
 
 // ParseAll reads the sequence of elements in b.
@@ -101,6 +123,39 @@ func ParseAll(b []byte) ([]Element, error) {
 		b = rest
 	}
 	return elements, nil
+}
+
+// EncodeHigh encodes an element whose tag number needs the two-octet
+// identifier form, such as the MMS file services (0xbf 0x48 … 0xbf 0x4d and
+// 0x9f 0x49/0x4a). first carries the class/constructed bits; second carries
+// the tag number and must be 31 or greater.
+func EncodeHigh(first, second byte, content ...[]byte) []byte {
+	if first&0x1f != 0x1f || second < 0x1f || second&0x80 != 0 {
+		panic("ber: invalid high tag number")
+	}
+	length := 0
+	for _, p := range content {
+		length += len(p)
+	}
+	header := []byte{first, second}
+	if length < 128 {
+		header = append(header, byte(length))
+	} else {
+		var scratch [8]byte
+		binary.BigEndian.PutUint64(scratch[:], uint64(length))
+		pos := 0
+		for scratch[pos] == 0 {
+			pos++
+		}
+		header = append(header, 0x80|byte(8-pos))
+		header = append(header, scratch[pos:]...)
+	}
+	result := make([]byte, len(header), len(header)+length)
+	copy(result, header)
+	for _, p := range content {
+		result = append(result, p...)
+	}
+	return result
 }
 
 // Encode wraps concatenated content in a tag and definite-length header.
