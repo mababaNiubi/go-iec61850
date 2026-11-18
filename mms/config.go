@@ -25,6 +25,15 @@ import (
 // ISOConfig configures the underlying ISO association, including selectors.
 type ISOConfig = iso.Config
 
+// ACSEAuthMechanism identifies the association authentication presented by a
+// peer. Only the ISO password mechanism (2.2.3.1) is implemented.
+type ACSEAuthMechanism = iso.ACSEAuthMechanism
+
+const (
+	ACSEAuthNone     = iso.ACSEAuthNone
+	ACSEAuthPassword = iso.ACSEAuthPassword
+)
+
 // Config contains local limits. Zero values select conservative defaults.
 type Config struct {
 	ISO                   ISOConfig
@@ -33,9 +42,45 @@ type Config struct {
 	MaxOutstandingCalled  int           // zero selects 5; range 1..1024
 	NestingLevel          int           // zero selects 16; range 1..64
 	RequestTimeout        time.Duration // per confirmed request; zero selects 5s; negative is invalid
+	// Password sends ACSE password authentication when dialing. Empty sends
+	// none. This is association authentication, separate from TLS.
+	Password []byte
+	// KeepAlive enables TCP keepalive probes with this period on client and
+	// server sockets. Zero disables it.
+	KeepAlive time.Duration
+	// MaxConnections bounds concurrent server associations; zero is
+	// unlimited. Further associations are closed during accept.
+	MaxConnections int
+	// OnStateChanged reports client association state transitions
+	// (connecting, connected, closed). It runs on the calling or receive
+	// goroutine and must return promptly.
+	OnStateChanged func(State)
+	// OnConnectionLost reports an unexpected client association end. A normal
+	// Close does not call it.
+	OnConnectionLost func(error)
+	// OnConnection reports server association acceptance and closure.
+	OnConnection func(remote string, connected bool)
+	// Authenticator verifies an incoming association (server role). When set,
+	// every association is checked, including one that presents no
+	// credentials. When nil, associations without credentials are accepted
+	// and any association that presents credentials is refused, so
+	// credentials are never silently ignored.
+	Authenticator func(mechanism ACSEAuthMechanism, value []byte) error
 }
 
 func (c Config) normalized() (Config, error) {
+	if len(c.Password) > 0 {
+		c.ISO.Password = append([]byte(nil), c.Password...)
+	}
+	if c.Authenticator != nil {
+		c.ISO.Authenticator = c.Authenticator
+	}
+	if c.MaxConnections < 0 {
+		return c, fmt.Errorf("mms: MaxConnections must not be negative")
+	}
+	if c.KeepAlive < 0 {
+		return c, fmt.Errorf("mms: KeepAlive must not be negative")
+	}
 	if c.MaxPDUSize == 0 {
 		c.MaxPDUSize = 65000
 	}
@@ -78,3 +123,12 @@ type Identity struct{ Vendor, Model, Revision string }
 
 // Status holds the logical and physical status codes returned by MMS Status.
 type Status struct{ Logical, Physical int }
+
+// State is one client association state.
+type State string
+
+const (
+	StateConnecting State = "connecting"
+	StateConnected  State = "connected"
+	StateClosed     State = "closed"
+)

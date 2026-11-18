@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 	"time"
 
@@ -59,12 +60,41 @@ func Dial(ctx context.Context, address string, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	local := localParameters(cfg)
-	conn, response, err := iso.Dial(ctx, address, cfg.ISO, encodeInitiate(0xa8, local))
+	if cfg.OnStateChanged != nil {
+		cfg.OnStateChanged(StateConnecting)
+	}
+	dialer := &net.Dialer{KeepAlive: cfg.KeepAlive}
+	raw, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
+		stateChanged(cfg, StateClosed)
 		return nil, err
 	}
-	return newClient(conn, response, cfg, local)
+	return establish(ctx, raw, cfg)
+}
+
+// establish runs ISO/ACSE/MMS on an established socket. Transport wrappers
+// such as TLS share it, so state callbacks, keepalive and shutdown behavior
+// stay identical.
+func establish(ctx context.Context, raw net.Conn, cfg Config) (*Client, error) {
+	local := localParameters(cfg)
+	conn, response, err := iso.DialConn(ctx, raw, cfg.ISO, encodeInitiate(0xa8, local))
+	if err != nil {
+		stateChanged(cfg, StateClosed)
+		return nil, err
+	}
+	client, err := newClient(conn, response, cfg, local)
+	if err != nil {
+		stateChanged(cfg, StateClosed)
+		return nil, err
+	}
+	stateChanged(cfg, StateConnected)
+	return client, nil
+}
+
+func stateChanged(cfg Config, state State) {
+	if cfg.OnStateChanged != nil {
+		cfg.OnStateChanged(state)
+	}
 }
 
 // newClient completes MMS negotiation on an association and starts the
@@ -115,6 +145,11 @@ func (c *Client) shutdown(err error) {
 	}
 	c.mu.Unlock()
 	c.conn.Close()
+	stateChanged(c.cfg, StateClosed)
+	// A normal Close is not a lost connection: only unexpected endings notify.
+	if !errors.Is(err, ErrClosed) && c.cfg.OnConnectionLost != nil {
+		c.cfg.OnConnectionLost(err)
+	}
 }
 
 // Close releases owned transports and workers. Defer it immediately after successful

@@ -471,6 +471,14 @@ func (c *Conn) parsePresentationConnect(b []byte, response bool) ([]byte, error)
 	return payload, nil
 }
 
+// associateAuth is the authentication carried by one AARQ. Mechanism is
+// None when the association presented no authentication fields.
+type associateAuth struct {
+	mechanism ACSEAuthMechanism
+	value     []byte
+	present   bool
+}
+
 func associateRequest(cfg Config, initiate []byte) []byte {
 	parts := [][]byte{tlv(0xa1, tlv(6, mmsApplication))}
 	if len(cfg.RemoteAPTitle) > 0 {
@@ -479,8 +487,23 @@ func associateRequest(cfg Config, initiate []byte) []byte {
 	if len(cfg.LocalAPTitle) > 0 {
 		parts = append(parts, tlv(0xa6, tlv(6, oid(cfg.LocalAPTitle))), tlv(0xa7, intTLV(2, uint32(cfg.LocalAEQualifier))))
 	}
+	if len(cfg.Password) > 0 {
+		// ISO 9548 simple authentication, matching libiec61850: sender
+		// requirements marked as authentication requested, the password
+		// mechanism name and the password value in a [0] element.
+		parts = append(parts,
+			tlv(0x8a, []byte{0x04, 0x80}),
+			tlv(0x8b, acsePasswordMechanism),
+			tlv(0xac, tlv(0x80, cfg.Password)))
+	}
 	parts = append(parts, tlv(0xbe, tlv(0x28, intTLV(2, 3), tlv(0xa0, initiate))))
 	return tlv(0x60, parts...)
+}
+
+// associateReject encodes an AARE with a nonzero result. 1 is
+// rejected-permanent, which every peer reports as a failed association.
+func associateReject(result uint32) []byte {
+	return tlv(0x61, tlv(0xa1, tlv(6, mmsApplication)), tlv(0xa2, intTLV(2, result)))
 }
 
 func associateResponse(initiate []byte, indirect uint32) []byte {
@@ -488,17 +511,28 @@ func associateResponse(initiate []byte, indirect uint32) []byte {
 }
 
 func parseAssociate(b []byte, response bool) ([]byte, uint32, error) {
+	payload, indirect, _, err := parseAssociateAuth(b, response)
+	return payload, indirect, err
+}
+
+// parseAssociateAuth parses an AARQ/AARE and returns the authentication fields
+// of an association request. Policy belongs to the caller: parsing a
+// mechanism it does not implement is a distinct outcome from ignoring it.
+func parseAssociateAuth(b []byte, response bool) ([]byte, uint32, associateAuth, error) {
+	var auth associateAuth
+	var mechanism []byte
+	auth.mechanism = ACSEAuthNone
 	tag := byte(0x60)
 	if response {
 		tag = 0x61
 	}
 	e, err := single(b, tag)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, auth, err
 	}
 	fields, err := elements(e.value)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, auth, err
 	}
 	hasContext, hasResult := false, false
 	var payload []byte
@@ -506,72 +540,98 @@ func parseAssociate(b []byte, response bool) ([]byte, uint32, error) {
 	seen := map[byte]bool{}
 	for _, f := range fields {
 		if seen[f.tag] {
-			return nil, 0, errors.New("iso: repeated ACSE field")
+			return nil, 0, auth, errors.New("iso: repeated ACSE field")
 		}
 		seen[f.tag] = true
 		switch f.tag {
 		case 0xa1:
 			ctx, e := single(f.value, 6)
 			if e != nil || !bytes.Equal(ctx.value, mmsApplication) {
-				return nil, 0, errors.New("iso: MMS application context required")
+				return nil, 0, auth, errors.New("iso: MMS application context required")
 			}
 			hasContext = true
 		case 0xa2:
 			if response {
 				result, e := single(f.value, 2)
 				if e != nil {
-					return nil, 0, e
+					return nil, 0, auth, e
 				}
 				n, e := positiveInt(result.value)
 				if e != nil || n != 0 {
-					return nil, 0, errors.New("iso: ACSE association rejected")
+					return nil, 0, auth, errors.New("iso: ACSE association rejected")
 				}
 				hasResult = true
 			}
-		case 0x8a, 0x8b, 0xac:
-			// Authentication must not silently succeed when no authenticator exists.
-			return nil, 0, errors.New("iso: ACSE authentication is not supported")
+		case 0x8a:
+			// sender-acse-requirements: presence alone is not authentication.
+		case 0x8b:
+			mechanism = f.value
+			auth.present = true
+		case 0xac:
+			inner, e := elements(f.value)
+			if e != nil {
+				return nil, 0, auth, e
+			}
+			for _, part := range inner {
+				if part.tag == 0x80 {
+					auth.value = part.value
+				}
+			}
+			if auth.value == nil {
+				return nil, 0, auth, errors.New("iso: invalid ACSE authentication value")
+			}
+			auth.present = true
 		case 0xbe:
 			external, e := single(f.value, 0x28)
 			if e != nil {
-				return nil, 0, e
+				return nil, 0, auth, e
 			}
 			parts, e := elements(external.value)
 			if e != nil {
-				return nil, 0, e
+				return nil, 0, auth, e
 			}
 			hasIndirect := false
 			for _, part := range parts {
 				switch part.tag {
 				case 2:
 					if hasIndirect {
-						return nil, 0, errors.New("iso: duplicate indirect reference")
+						return nil, 0, auth, errors.New("iso: duplicate indirect reference")
 					}
 					indirect, e = positiveInt(part.value)
 					if e != nil {
-						return nil, 0, e
+						return nil, 0, auth, e
 					}
 					hasIndirect = true
 				case 0xa0:
 					if payload != nil {
-						return nil, 0, errors.New("iso: duplicate ACSE payload")
+						return nil, 0, auth, errors.New("iso: duplicate ACSE payload")
 					}
 					payload = part.value
 				case 6:
 					if !bytes.Equal(part.value, mmsSyntax) {
-						return nil, 0, errors.New("iso: unexpected ACSE direct reference")
+						return nil, 0, auth, errors.New("iso: unexpected ACSE direct reference")
 					}
 				default:
-					return nil, 0, errors.New("iso: unsupported ACSE external encoding")
+					return nil, 0, auth, errors.New("iso: unsupported ACSE external encoding")
 				}
 			}
 			if !hasIndirect {
-				return nil, 0, errors.New("iso: ACSE indirect reference missing")
+				return nil, 0, auth, errors.New("iso: ACSE indirect reference missing")
 			}
 		}
 	}
 	if !hasContext || len(payload) == 0 || (response && !hasResult) {
-		return nil, 0, errors.New("iso: incomplete ACSE association")
+		return nil, 0, auth, errors.New("iso: incomplete ACSE association")
 	}
-	return payload, indirect, nil
+	// Resolve the presented mechanism. An unknown mechanism is not ignored:
+	// the caller must decide whether it can authenticate the peer at all.
+	if mechanism != nil {
+		if !bytes.Equal(mechanism, acsePasswordMechanism) {
+			return nil, 0, auth, errors.New("iso: unsupported ACSE authentication mechanism")
+		}
+		auth.mechanism = ACSEAuthPassword
+	} else if auth.present {
+		return nil, 0, auth, errors.New("iso: ACSE authentication value without a mechanism")
+	}
+	return payload, indirect, auth, nil
 }

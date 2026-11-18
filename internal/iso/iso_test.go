@@ -231,8 +231,17 @@ func TestAssociationRejectAndAuthentication(t *testing.T) {
 		t.Fatal("ACSE rejection ignored")
 	}
 	auth := tlv(0x60, tlv(0xa1, tlv(6, mmsApplication)), tlv(0x8b, []byte{0x52, 3, 1}), tlv(0xbe, tlv(0x28, intTLV(2, 3), tlv(0xa0, []byte{0xa8, 0}))))
-	if _, _, err := parseAssociate(auth, false); err == nil {
-		t.Fatal("unsupported authentication silently accepted")
+	if _, _, err := parseAssociate(auth, false); err != nil {
+		t.Fatalf("known mechanism must parse: %v", err)
+	}
+	payload, _, parsed, err := parseAssociateAuth(auth, false)
+	if err != nil || !parsed.present || parsed.mechanism != ACSEAuthPassword || len(payload) == 0 {
+		t.Fatalf("authentication not surfaced: %+v err=%v", parsed, err)
+	}
+	// An unknown mechanism is rejected, not ignored.
+	unknown := tlv(0x60, tlv(0xa1, tlv(6, mmsApplication)), tlv(0x8b, []byte{0x52, 3, 9}), tlv(0xbe, tlv(0x28, intTLV(2, 3), tlv(0xa0, []byte{0xa8, 0}))))
+	if _, _, _, err := parseAssociateAuth(unknown, false); err == nil {
+		t.Fatal("unknown authentication mechanism accepted")
 	}
 }
 
@@ -250,4 +259,17 @@ func FuzzAssociationDecoders(f *testing.F) {
 		_, _, _, _ = parseSession(b, 13)
 		_, _, _ = parsePresentationData(b)
 	})
+}
+
+// The password is carried in the AARQ exactly as the reference encodes it:
+// sender requirements, mechanism OID 52 03 01 and a [0] password value.
+func TestACSEPasswordWireEncoding(t *testing.T) {
+	raw := associateRequest(Config{Password: []byte("ab")}, []byte{0xa8, 0})
+	want := []byte{0x8a, 0x02, 0x04, 0x80, 0x8b, 0x03, 0x52, 0x03, 0x01, 0xac, 0x04, 0x80, 0x02, 'a', 'b'}
+	if !bytes.Contains(raw, want) {
+		t.Fatalf("password authentication fields missing: % x", raw)
+	}
+	if plain := associateRequest(Config{}, []byte{0xa8, 0}); bytes.Contains(plain, []byte{0x8b, 0x03, 0x52, 0x03, 0x01}) {
+		t.Fatal("a plain association must not carry an authentication mechanism")
+	}
 }

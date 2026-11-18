@@ -97,8 +97,12 @@ func (s *Server) Serve(listener net.Listener) error {
 			}
 			return err
 		}
-		if !s.adopt(raw) {
+		admitted, stop := s.adopt(raw)
+		if stop {
 			return nil
+		}
+		if !admitted {
+			continue
 		}
 		go s.serveConnection(raw)
 	}
@@ -106,16 +110,30 @@ func (s *Server) Serve(listener net.Listener) error {
 
 // adopt registers an accepted socket for shutdown and worker accounting. It
 // reports false, after closing raw, when the server is already closed.
-func (s *Server) adopt(raw net.Conn) bool {
+// adopt registers an accepted socket for shutdown and worker accounting.
+// admitted reports whether the socket is served; stop reports that the server
+// itself is closed. An over-limit association is refused without stopping the
+// accept loop.
+func (s *Server) adopt(raw net.Conn) (admitted, stop bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		raw.Close()
-		return false
+		return false, true
+	}
+	if limit := s.cfg.MaxConnections; limit > 0 && len(s.raw) >= limit {
+		raw.Close()
+		return false, false
+	}
+	if s.cfg.KeepAlive > 0 {
+		if tcp, ok := raw.(*net.TCPConn); ok {
+			_ = tcp.SetKeepAlive(true)
+			_ = tcp.SetKeepAlivePeriod(s.cfg.KeepAlive)
+		}
 	}
 	s.raw[raw] = struct{}{}
 	s.wg.Add(1)
-	return true
+	return true, false
 }
 
 // ListenAndServe creates a TCP listener at host:port and delegates its lifetime to Serve.
@@ -191,6 +209,10 @@ func (a *Association) send(data []byte) error {
 }
 func (s *Server) serveConnection(raw net.Conn) {
 	defer s.wg.Done()
+	if s.cfg.OnConnection != nil {
+		s.cfg.OnConnection(raw.RemoteAddr().String(), true)
+		defer s.cfg.OnConnection(raw.RemoteAddr().String(), false)
+	}
 	defer func() { raw.Close(); s.mu.Lock(); delete(s.raw, raw); s.mu.Unlock() }()
 	s.serveSession(raw)
 }

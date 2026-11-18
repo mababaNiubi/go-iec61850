@@ -10,8 +10,6 @@ import (
 	"net"
 	"strings"
 	"time"
-
-	"github.com/mababaNiubi/go-iec61850/internal/iso"
 )
 
 // This file adds a TLS transport under the unchanged ISO/ACSE/MMS stack.
@@ -199,8 +197,10 @@ func DialTLS(ctx context.Context, address string, cfg Config, policy TLSPolicy) 
 	if err != nil {
 		return nil, err
 	}
-	raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
+	stateChanged(cfg, StateConnecting)
+	raw, err := (&net.Dialer{KeepAlive: cfg.KeepAlive}).DialContext(ctx, "tcp", address)
 	if err != nil {
+		stateChanged(cfg, StateClosed)
 		return nil, err
 	}
 	started := time.Now()
@@ -215,6 +215,7 @@ func DialTLS(ctx context.Context, address string, cfg Config, policy TLSPolicy) 
 	}
 	if handshakeErr != nil {
 		_ = secured.Close()
+		stateChanged(cfg, StateClosed)
 		kind := SecurityHandshakeFailed
 		if ctx.Err() == nil {
 			kind = SecurityPeerRejected
@@ -232,13 +233,7 @@ func DialTLS(ctx context.Context, address string, cfg Config, policy TLSPolicy) 
 		PeerCN: peerCommonName(state), Mutual: len(state.PeerCertificates) > 0,
 		Verified: !policy.InsecureSkipVerify && len(state.PeerCertificates) > 0,
 	})
-	local := localParameters(cfg)
-	conn, response, err := iso.DialConn(ctx, secured, cfg.ISO, encodeInitiate(0xa8, local))
-	if err != nil {
-		_ = secured.Close()
-		return nil, err
-	}
-	return newClient(conn, response, cfg, local)
+	return establish(ctx, secured, cfg)
 }
 
 // ServeTLS accepts TLS-secured associations on listener until shutdown. The
@@ -281,11 +276,19 @@ func (s *Server) serveTLS(listener net.Listener, cfg *tls.Config, policy TLSPoli
 		}
 		// Adopt the plaintext socket before the handshake so shutdown can
 		// abort it; the handshake runs off the accept loop.
-		if !s.adopt(raw) {
+		admitted, stop := s.adopt(raw)
+		if stop {
 			return nil
+		}
+		if !admitted {
+			continue
 		}
 		go func(raw net.Conn) {
 			defer s.wg.Done()
+			if s.cfg.OnConnection != nil {
+				s.cfg.OnConnection(raw.RemoteAddr().String(), true)
+				defer s.cfg.OnConnection(raw.RemoteAddr().String(), false)
+			}
 			defer func() {
 				raw.Close()
 				s.mu.Lock()

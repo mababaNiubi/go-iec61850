@@ -31,7 +31,27 @@ type Config struct {
 	LocalAEQualifier, RemoteAEQualifier int
 	MaxTPDUSize, MaxPDUSize             int
 	HandshakeTimeout                    time.Duration
+	// Password requests ACSE password authentication (ISO 9548 mechanism
+	// 2.2.3.1) when dialing. Empty sends no authentication fields.
+	Password []byte
+	// Authenticator verifies an incoming association. A nil authenticator
+	// accepts unauthenticated associations and rejects any association that
+	// presents credentials, rather than silently ignoring them.
+	Authenticator func(mechanism ACSEAuthMechanism, value []byte) error
 }
+
+// ACSEAuthMechanism identifies the association authentication presented by a
+// peer. Password is the ISO "simple authentication" mechanism; None means the
+// association carried no authentication fields.
+type ACSEAuthMechanism string
+
+const (
+	ACSEAuthNone     ACSEAuthMechanism = "none"
+	ACSEAuthPassword ACSEAuthMechanism = "password"
+)
+
+// ACSE password mechanism name (ISO 9548 2.2.3.1) shared with libiec61850.
+var acsePasswordMechanism = []byte{0x52, 0x03, 0x01}
 
 // DefaultConfig returns independent selector buffers. AP titles can be supplied
 // by applications requiring them; omitting them is accepted by libiec61850.
@@ -256,9 +276,28 @@ func Accept(ctx context.Context, raw net.Conn, cfg Config, initiateHandler func(
 	if err != nil {
 		return nil, err
 	}
-	initiate, indirect, err := parseAssociate(acse, false)
+	initiate, indirect, auth, err := parseAssociateAuth(acse, false)
 	if err != nil {
 		return nil, err
+	}
+	// Authentication policy: credentials are never silently ignored. With an
+	// authenticator installed every association is checked, including one
+	// that presents none; without one, presenting credentials is refused.
+	authErr := func() error {
+		if cfg.Authenticator != nil {
+			return cfg.Authenticator(auth.mechanism, auth.value)
+		}
+		if auth.present {
+			return errors.New("iso: association presented credentials but no authenticator is configured")
+		}
+		return nil
+	}()
+	if authErr != nil {
+		// Reject with a permanent AARE result before closing, so the peer
+		// reports an association failure instead of a bare transport error.
+		reject := encodeSession(14, nil, cfg.LocalSSelector, presentationAccept(cfg, c.acseContext, associateReject(1)))
+		_ = c.writeTSDU(reject)
+		return nil, fmt.Errorf("iso: authentication failed: %w", authErr)
 	}
 	if len(initiate) > cfg.MaxPDUSize {
 		return nil, errors.New("iso: initiate exceeds PDU limit")
