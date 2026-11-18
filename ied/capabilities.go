@@ -40,7 +40,7 @@ type CapabilityMatrix struct {
 // bits to the same profile.
 func Capabilities() CapabilityMatrix {
 	return CapabilityMatrix{
-		Version: "1.4.1",
+		Version: "1.5.0",
 		Rows: []Capability{
 			// MMS client role.
 			{Area: "client", Service: "association identify/status/conclude", Status: Supported, Package: "mms"},

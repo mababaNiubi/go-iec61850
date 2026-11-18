@@ -36,15 +36,15 @@ Key characteristics:
 
 | Area | Available capabilities |
 |---|---|
-| MMS | Native Go client/server, browsing, typed read/write, batch and alternate access, named variable lists |
-| IED client | Online discovery, immediate controls, URCB/BRCB subscriptions and replay, current dataset reads, setting groups |
+| MMS | Native Go client/server, browsing, typed read/write, batch and alternate access, named variable lists, read-only file services, TLS and ACSE password authentication |
+| IED client | Online discovery, immediate and time-activated controls, URCB/BRCB subscriptions with replay and reservation, dataset bindings with generation checks, GoCB/SVCB online management, setting groups |
 | SCL | Supported SCD/ICD/CID models, typed point catalogs, datasets, equipment associations, SubNetworks/ServerAt and ExtRef resolution |
 | GOOSE | Layer 2 publication/subscription, typed dataset layouts, retransmission and TAL expiry |
 | SV | Layer 2 publication/subscription, multiple ASDUs, SCL-derived layouts and checked field access |
 | Simulation | Single-device runtimes, multi-IED software stations, custom acquisition and actuator callbacks |
 | IEDLab | SCL import, model browsing, simulation, online reports/control/settings and engineering comparison |
 
-The runtime library has no third-party Go module dependencies and requires no cgo. Supported profiles and limits are described in the [SCL guide](docs/api/scl.md) and [platform notes](docs/platforms.md). Full ACSI/SCL coverage, online GoCB/SVCB reconfiguration, R-GOOSE/R-SV, PTP and IEC 62351 are outside the current scope. Releases do not imply IEC conformance certification.
+The runtime library has no third-party Go module dependencies and requires no cgo. Supported profiles and limits are described in the [SCL guide](docs/api/scl.md) and [platform notes](docs/platforms.md). Full ACSI/SCL coverage, R-GOOSE/R-SV, PTP, IEC 62351-4 application security and ACSE certificate authentication are outside the current scope; TLS transport protection, ACSE password authentication, GoCB/SVCB enable control and read-only MMS file retrieval are available. Releases do not imply IEC conformance certification.
 
 ## Requirements
 
@@ -57,12 +57,12 @@ The runtime library has no third-party Go module dependencies and requires no cg
 Add the SDK to an existing Go module:
 
 ```sh
-go get github.com/mababaNiubi/go-iec61850@v1.4.1
+go get github.com/mababaNiubi/go-iec61850@v1.5.0
 ```
 
 Import the public package you need, such as `github.com/mababaNiubi/go-iec61850/mms` or `ied`. See the [package guide](docs/api/README.md#packages).
 
-For IEDLab without a Go toolchain, download a Windows amd64 or Linux amd64 archive from [v1.4.1](https://github.com/mababaNiubi/go-iec61850/releases/tag/v1.4.1) and verify it against `SHA256SUMS.txt`. Each archive includes startup instructions and SCD models.
+For IEDLab without a Go toolchain, download a Windows amd64 or Linux amd64 archive from [v1.5.0](https://github.com/mababaNiubi/go-iec61850/releases/tag/v1.5.0) and verify it against `SHA256SUMS.txt`. Each archive includes startup instructions and SCD models.
 
 ## Quick start
 

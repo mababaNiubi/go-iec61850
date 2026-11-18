@@ -30,14 +30,14 @@ SCL 工程声明将逻辑设备、测点、数据集和网络流映射为经过�
 | 领域 | 已提供能力 |
 |---|---|
 | MMS | 原生客户端/服务端、目录查询、类型读写、批量与交替访问、命名变量表 |
-| IED 客户端 | 在线发现、即时控制、URCB/BRCB 订阅与续传、当前数据集读取、定值组 |
+| IED 客户端 | 在线发现、即时与定时控制、URCB/BRCB 订阅/续传/预留、带代际校验的数据集绑定、GoCB/SVCB 在线管理、定值组 |
 | SCL | 支持范围内的 SCD/ICD/CID 模型、测点目录、数据集、一次设备、子网/ServerAt 和 ExtRef 解析 |
 | GOOSE | 二层发布订阅、类型布局、重发与 TAL 超时 |
 | SV | 二层发布订阅、多 ASDU、SCL 布局与边界检查 |
 | 模拟 | 单设备和多 IED 软件站点，可替换采集、计算与执行器回调 |
 | IEDLab | SCL 导入、模型浏览、模拟、在线报告/控制/定值和工程比较 |
 
-运行库无第三方 Go 模块依赖，不需要 cgo。支持的模型和限制见 [SCL 指引](docs/api/scl.zh-CN.md)与[平台说明](docs/platforms.zh-CN.md)。完整 ACSI/SCL、在线 GoCB/SVCB 重配置、R-GOOSE/R-SV、PTP 和 IEC 62351 不在当前范围内。发布版本不代表取得 IEC 一致性认证。
+运行库无第三方 Go 模块依赖，不需要 cgo。支持的模型和限制见 [SCL 指引](docs/api/scl.zh-CN.md)与[平台说明](docs/platforms.zh-CN.md)。完整 ACSI/SCL、R-GOOSE/R-SV、PTP、IEC 62351-4 应用层安全和 ACSE 证书认证不在当前范围内；TLS 传输保护、ACSE 口令认证、GoCB/SVCB 使能控制和只读 MMS 文件读取已提供。发布版本不代表取得 IEC 一致性认证。
 
 ## 环境要求
 
@@ -50,12 +50,12 @@ SCL 工程声明将逻辑设备、测点、数据集和网络流映射为经过�
 在已有 Go 模块中添加 SDK：
 
 ```sh
-go get github.com/mababaNiubi/go-iec61850@v1.4.1
+go get github.com/mababaNiubi/go-iec61850@v1.5.0
 ```
 
 按需导入 `github.com/mababaNiubi/go-iec61850/mms`、`ied` 等公开包，参见[包选择](docs/api/README.zh-CN.md#包选择)。
 
-无需 Go 环境时，可从 [v1.4.1](https://github.com/mababaNiubi/go-iec61850/releases/tag/v1.4.1) 下载 Windows amd64 或 Linux amd64 的 IEDLab 包，并用 `SHA256SUMS.txt` 校验。压缩包包含启动说明和 SCD 模型。
+无需 Go 环境时，可从 [v1.5.0](https://github.com/mababaNiubi/go-iec61850/releases/tag/v1.5.0) 下载 Windows amd64 或 Linux amd64 的 IEDLab 包，并用 `SHA256SUMS.txt` 校验。压缩包包含启动说明和 SCD 模型。
 
 ## 快速开始
 

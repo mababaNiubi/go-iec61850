@@ -66,7 +66,7 @@ func NewServer(store Store, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{Store: store, cfg: cfg, Identity: Identity{"Go MMS", "Native Go MMS", "1.4.1"}, raw: make(map[net.Conn]struct{}), lists: make(map[ObjectName]NamedList)}, nil
+	return &Server{Store: store, cfg: cfg, Identity: Identity{"Go MMS", "Native Go MMS", "1.5.0"}, raw: make(map[net.Conn]struct{}), lists: make(map[ObjectName]NamedList)}, nil
 }
 
 // Serve accepts associations on listener until shutdown. The server owns and closes listener;

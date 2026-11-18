@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0 - 2026-11-18
 
 - Add a TLS transport under the unchanged ISO/ACSE/MMS stack with strict policy validation, mutual certificate authentication, redacted security events and no silent downgrade.
 - Add ACSE password authentication on both roles, with credentials never silently ignored, connection state/lost callbacks, TCP keepalive and a server connection limit.
