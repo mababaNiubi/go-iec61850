@@ -40,7 +40,7 @@ func newTestPKI(t *testing.T) *testPKI {
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(time.Hour),
 		IsCA:                  true,
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 	}
 	caDER, err := x509.CreateCertificate(rand.Reader, caTpl, caTpl, &caKey.PublicKey, caKey)
@@ -327,5 +327,59 @@ func TestTLSInsecureOptIn(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Kind != SecurityHandshakeSucceeded || events[0].Verified {
 		t.Fatalf("insecure handshake must not claim a verified peer: %+v", events)
+	}
+}
+
+// Certificate pinning and revocation are checked in addition to chain
+// verification, and the verified peer leaf is exposed to the caller.
+func TestTLSRevocationAndPinning(t *testing.T) {
+	pki := newTestPKI(t)
+	address := startTLSServer(t, tlsTestStore(t), TLSPolicy{Certificates: []tls.Certificate{pki.serverCert}})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// The peer certificate is available after a successful handshake.
+	client, err := DialTLS(ctx, address, Config{}, TLSPolicy{RootCAs: pki.caPool, ServerName: "server.ied.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert := client.PeerCertificate()
+	if cert == nil || cert.Subject.CommonName != "server.ied.test" {
+		t.Fatalf("peer certificate not exposed: %+v", cert)
+	}
+	client.Close()
+
+	// Pinning accepts only the listed leaf.
+	if _, err := DialTLS(ctx, address, Config{}, TLSPolicy{
+		RootCAs: pki.caPool, ServerName: "server.ied.test",
+		KnownCertificates: [][]byte{pki.clientCert.Certificate[0]},
+	}); err == nil {
+		t.Fatal("a peer outside the known-certificate list must be refused")
+	}
+
+	// A revocation list naming the server leaf refuses the association.
+	leaf, err := x509.ParseCertificate(pki.serverCert.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	crlDER, err := x509.CreateRevocationList(rand.Reader, &x509.RevocationList{
+		Number:     big.NewInt(1),
+		ThisUpdate: time.Now().Add(-time.Hour),
+		NextUpdate: time.Now().Add(time.Hour),
+		RevokedCertificateEntries: []x509.RevocationListEntry{
+			{SerialNumber: leaf.SerialNumber, RevocationTime: time.Now().Add(-time.Minute)},
+		},
+	}, pki.ca, pki.caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crl, err := x509.ParseRevocationList(crlDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DialTLS(ctx, address, Config{}, TLSPolicy{
+		RootCAs: pki.caPool, ServerName: "server.ied.test", CRLs: []*x509.RevocationList{crl},
+	}); err == nil {
+		t.Fatal("a revoked peer certificate must be refused")
 	}
 }

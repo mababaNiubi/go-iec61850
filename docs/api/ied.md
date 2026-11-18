@@ -148,6 +148,18 @@ configured, err := client.ConfigureRCB(ctx, block, ied.RCBConfiguration{DataSet:
 
 `Discover` charges every request, decoded name and object against one budget (`MaxObjects`, `MaxRequests`, `MaxBytes`); exhaustion stops before further work, sets `Truncated` with a `TruncationReason`, and preserves completed results for a re-run with a larger budget. `BuildModelTree` groups a result into device → logical node → FC → point without inventing semantics the peer did not return. `NewSelectionDocument` + `VerifySelection` revalidate a saved selection point by point (`ok`, `missing`, `type-changed`) without modifying remote state; unknown document versions fail explicitly. `Capabilities()` returns the reviewed role/service profile — unsupported services are not advertised on the wire.
 
+## Manage GOOSE and SV control blocks online
+
+```go
+gcb, err := client.ReadGoCB(ctx, mms.DomainName("BayIEDCTRL", "LLN0$GO$gcbPos"))
+err = client.SetGoCBEnabled(ctx, gcbRef, false)   // GoEna gates publication
+
+svcb, err := client.ReadSVCB(ctx, mms.DomainName("MUD", "LLN0$MS$MSVCB01"))
+err = client.SetSVCBEnabled(ctx, svcbRef, true)   // SvEna
+```
+
+Only fields with settled online behavior are written: `GoEna` and `SvEna`. Dataset rebinding and destination-address changes alter the engineered stream layout and are refused instead of silently ignored. The modeled server exposes GoCB attributes and gates GOOSE publication on `GoEna`; SVCB modeling is not implemented, so `ReadSVCB` works only against peers that declare it. Time-activated control uses `ControlOptions.OperTime` against a peer whose Oper declares `operTm` (enhanced security only); zero means immediate. `SetAccessHandler` applies a remote read/write policy without touching local acquisition.
+
 ## Secure the transport with TLS
 
 `mms.DialTLS` and `(*mms.Server).ServeTLS` place TLS between TCP and the ISO session; no ISO, ACSE or MMS byte changes. Scope is transport confidentiality, integrity and optional mutual certificate authentication — **not** IEC 62351-4 end-to-end security, ACSE authentication or role-based authorization.

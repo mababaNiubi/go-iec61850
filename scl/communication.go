@@ -196,6 +196,7 @@ func (d *IED) addStream(ld string, b blockXML, g gse) error {
 	stream := &Stream{ied: d, name: n, set: set, minTime: minTime, maxTime: maxTime}
 	stream.frame = goose.Frame{Destination: [6]byte(mac), APPID: uint16(app), VLAN: vlan,
 		PDU: goose.PDU{GoCBRef: n.String(), DataSet: set.Name.String(), GoID: b.GoID, ConfRev: b.Revision}}
+	stream.enabled.Store(true)
 	for _, v := range set.Variables {
 		spec, err := mms.SelectedType(d.types[v.Name], v.Selection)
 		if err != nil {
@@ -207,5 +208,5 @@ func (d *IED) addStream(ld string, b blockXML, g gse) error {
 		return err
 	}
 	d.streams[n] = stream
-	return nil
+	return d.addGoCB(n, stream)
 }

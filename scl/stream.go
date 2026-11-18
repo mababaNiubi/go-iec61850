@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/mababaNiubi/go-iec61850/data"
@@ -22,6 +23,9 @@ type Stream struct {
 	frame            goose.Frame
 	types            []mms.TypeSpec
 	minTime, maxTime time.Duration
+	// GoEna gates publication; force publishes one state after re-enabling.
+	enabled atomic.Bool
+	force   atomic.Bool
 }
 
 // StreamInfo describes the wire settings without exposing the mutable runtime.
@@ -138,11 +142,14 @@ func (f *feed) detach() {
 	delete(d.feeds, f)
 }
 func (f *feed) capture(ctx context.Context) {
+	if !f.stream.enabled.Load() {
+		return
+	}
 	values, err := f.stream.values(ctx)
 	if err == nil {
-		same := true
+		same := !f.stream.force.Swap(false)
 		for i, v := range values {
-			if !v.Equal(f.last[i]) {
+			if !same || !v.Equal(f.last[i]) {
 				same = false
 				break
 			}

@@ -2,6 +2,7 @@
 package mms
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -83,6 +84,12 @@ type TLSPolicy struct {
 	// InsecureSkipVerify disables server-certificate verification. Requires
 	// AllowInsecure and is refused otherwise.
 	InsecureSkipVerify bool
+	// CRLs add revocation lists checked during peer verification on both
+	// sides. An empty list performs no revocation check.
+	CRLs []*x509.RevocationList
+	// KnownCertificates, when non-empty, pins the accepted peer leaf
+	// certificates: any other peer is rejected even if its chain is valid.
+	KnownCertificates [][]byte
 	// OnEvent receives redacted transport security observations. It runs on
 	// the handshake goroutine and must return promptly.
 	OnEvent func(SecurityEvent)
@@ -114,6 +121,39 @@ func (p TLSPolicy) validate(server bool) error {
 	return nil
 }
 
+// verifyPeer applies revocation and pinning policy to a verified peer.
+func (p TLSPolicy) verifyPeer(state tls.ConnectionState) error {
+	if len(state.PeerCertificates) == 0 {
+		return nil
+	}
+	leaf := state.PeerCertificates[0]
+	if len(p.KnownCertificates) > 0 {
+		known := false
+		for _, der := range p.KnownCertificates {
+			if bytes.Equal(der, leaf.Raw) {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return fmt.Errorf("mms: peer certificate is not in the known-certificate list")
+		}
+	}
+	if len(p.CRLs) > 0 {
+		for _, list := range p.CRLs {
+			if !bytes.Equal(list.RawIssuer, leaf.RawIssuer) {
+				continue
+			}
+			for _, revoked := range list.RevokedCertificateEntries {
+				if revoked.SerialNumber.Cmp(leaf.SerialNumber) == 0 {
+					return fmt.Errorf("mms: peer certificate is revoked")
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (p TLSPolicy) base() *tls.Config {
 	version := p.MinVersion
 	if version == 0 {
@@ -131,6 +171,9 @@ func (p TLSPolicy) base() *tls.Config {
 		// Reject renegotiation-era behavior and require forward-secret suites
 		// where the runtime allows the choice.
 		PreferServerCipherSuites: false,
+		VerifyConnection: func(state tls.ConnectionState) error {
+			return p.verifyPeer(state)
+		},
 	}
 }
 
@@ -233,7 +276,14 @@ func DialTLS(ctx context.Context, address string, cfg Config, policy TLSPolicy) 
 		PeerCN: peerCommonName(state), Mutual: len(state.PeerCertificates) > 0,
 		Verified: !policy.InsecureSkipVerify && len(state.PeerCertificates) > 0,
 	})
-	return establish(ctx, secured, cfg)
+	client, err := establish(ctx, secured, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if len(state.PeerCertificates) > 0 {
+		client.peerCertificate = state.PeerCertificates[0]
+	}
+	return client, nil
 }
 
 // ServeTLS accepts TLS-secured associations on listener until shutdown. The

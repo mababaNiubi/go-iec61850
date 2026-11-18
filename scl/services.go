@@ -133,6 +133,18 @@ func (d *IED) writeService(ctx context.Context, a mms.VariableAccess, v mms.Valu
 		d.mu.Unlock()
 		return true, err
 	}
+	d.mu.Unlock()
+	if handled, err := d.writeGoCB(ctx, a.Name, v); handled {
+		if err != nil {
+			return true, err
+		}
+		// GoEna is a normal model value too: commit it so readers and
+		// reports observe the change.
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return true, d.commitLocked(context.WithoutCancel(ctx), mms.Assignment{Name: a.Name, Value: v})
+	}
+	d.mu.Lock()
 	apply := d.setpoints[a.Name]
 	d.mu.Unlock()
 	if apply == nil {

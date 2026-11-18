@@ -3,6 +3,7 @@ package mms
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -50,7 +51,15 @@ type Client struct {
 	concludeOnce sync.Once
 	reports      chan InformationReport
 	fileHandles  map[int32]*FileHandle
+	// peerCertificate is the verified TLS peer leaf, when the transport is
+	// TLS. It is nil for a plaintext association.
+	peerCertificate *x509.Certificate
 }
+
+// PeerCertificate returns the verified TLS peer leaf certificate, or nil for a
+// plaintext association. The returned certificate is shared and must not be
+// modified.
+func (c *Client) PeerCertificate() *x509.Certificate { return c.peerCertificate }
 
 // Dial establishes an ISO/MMS association at address (host:port). ctx bounds setup and
 // negotiation; later requests use their own contexts. Defer Close on success, or Conclude

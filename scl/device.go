@@ -25,6 +25,7 @@ type IED struct {
 	binary            map[mms.ObjectName]bool
 	sets              map[mms.ObjectName]mms.NamedList
 	streams           map[mms.ObjectName]*Stream
+	gocbs             map[mms.ObjectName]*Stream
 	// Protects change notifications and coherent multi-point snapshots.
 	mu            sync.RWMutex
 	feeds         map[*feed]struct{}

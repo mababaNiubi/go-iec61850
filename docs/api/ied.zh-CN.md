@@ -147,6 +147,18 @@ configured, err := client.ConfigureRCB(ctx, block, ied.RCBConfiguration{DataSet:
 
 `Discover` 用一个预算计量每个请求、解码名称和对象（`MaxObjects`、`MaxRequests`、`MaxBytes`），耗尽时在发出更多工作前停止，设置 `Truncated` 和 `TruncationReason`，并保留已完成结果以便加大预算重跑。`BuildModelTree` 把结果整理成设备 → 逻辑节点 → FC → 点位，不臆造对端未返回的语义。`NewSelectionDocument` + `VerifySelection` 逐点重验证已保存的选点（`ok`、`missing`、`type-changed`），不修改远端状态；未知版本文档显式报错。`Capabilities()` 返回已评审的角色/服务清单——未支持的服务不会在线路上广告。
 
+## 在线管理 GOOSE 与 SV 控制块
+
+```go
+gcb, err := client.ReadGoCB(ctx, mms.DomainName("BayIEDCTRL", "LLN0$GO$gcbPos"))
+err = client.SetGoCBEnabled(ctx, gcbRef, false)   // GoEna 控制发布
+
+svcb, err := client.ReadSVCB(ctx, mms.DomainName("MUD", "LLN0$MS$MSVCB01"))
+err = client.SetSVCBEnabled(ctx, svcbRef, true)   // SvEna
+```
+
+只写入行为已确定的在线字段：`GoEna` 与 `SvEna`。重绑数据集或修改目的地址会改变工程流布局，一律明确拒绝而非静默忽略。建模服务端提供 GoCB 属性并以 `GoEna` 门控 GOOSE 发布；SVCB 建模尚未实现，`ReadSVCB` 仅对声明了 SVCB 的对端有效。定时控制通过 `ControlOptions.OperTime` 作用于 Oper 声明了 `operTm` 的对端（仅增强安全模型）；零值表示立即执行。`SetAccessHandler` 施加远端读写策略，不影响本地采集。
+
 ## 用 TLS 保护传输
 
 `mms.DialTLS` 与 `(*mms.Server).ServeTLS` 把 TLS 放在 TCP 与 ISO 会话之间，ISO、ACSE、MMS 字节完全不变。范围仅限传输层保密性、完整性与可选的证书双向认证——**不包含** IEC 62351-4 端到端安全、ACSE 认证或基于角色的授权。
