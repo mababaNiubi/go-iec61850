@@ -154,9 +154,31 @@ func (d *IED) NewServer(cfg mms.Config) (*mms.Server, error) {
 			return nil, err
 		}
 	}
+	s.OnListChange = d.syncDynamicSet
 	s.OnRun = d.runReports
 	s.OnAssociation = d.serveAssociation
 	return s, nil
+}
+
+// syncDynamicSet mirrors domain-scoped lists defined or deleted over MMS
+// into the model's dataset registry, so a report control block can bind a
+// dynamically created list exactly like an engineered dataset: the DatSet
+// write path, member reads, triggers and integrity all resolve through the
+// same registry. Association-private lists are never reported by the server
+// and cannot back a domain RCB. A deleted set leaves any bound RCB reporting
+// empty membership; the revision is not bumped by list deletion.
+func (d *IED) syncDynamicSet(list mms.NamedList, added bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !added {
+		delete(d.sets, list.Name)
+		return
+	}
+	set := mms.NamedList{Name: list.Name, Variables: append([]mms.VariableAccess(nil), list.Variables...)}
+	for i := range set.Variables {
+		set.Variables[i].Selection = set.Variables[i].Selection.Clone()
+	}
+	d.sets[list.Name] = set
 }
 
 // Update commits one local ST/MX acquisition and wakes all publication loops.

@@ -21,15 +21,20 @@ type Server struct {
 	OnAssociation func(*Association)
 	// OnRun runs background services until Close or Serve returns. Configure it
 	// before Serve. It must return when its context is cancelled.
-	OnRun    func(context.Context)
-	cfg      Config
-	mu       sync.Mutex
-	listener net.Listener
-	closed   bool
-	raw      map[net.Conn]struct{}
-	lists    map[ObjectName]NamedList
-	wg       sync.WaitGroup
-	cancel   context.CancelFunc
+	OnRun func(context.Context)
+	// OnListChange, when set, is called after every domain/VMD named list is
+	// defined or deleted over MMS. Association-private lists are not
+	// reported: they cannot back a domain-scoped report control block.
+	// Configure it before Serve.
+	OnListChange func(list NamedList, added bool)
+	cfg          Config
+	mu           sync.Mutex
+	listener     net.Listener
+	closed       bool
+	raw          map[net.Conn]struct{}
+	lists        map[ObjectName]NamedList
+	wg           sync.WaitGroup
+	cancel       context.CancelFunc
 }
 
 // Association identifies a server-side association. Association-scoped lists

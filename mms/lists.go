@@ -169,6 +169,9 @@ func (a *Association) listService(ctx context.Context, id uint32, e ber.Element)
 			if err = a.server.AddNamedList(list); err != nil {
 				return fail(err)
 			}
+			if a.server.OnListChange != nil {
+				a.server.OnListChange(list, true)
+			}
 		}
 		return success(ber.Encode(0x8b))
 	case 0xac:
@@ -269,6 +272,7 @@ func (a *Association) listService(ctx context.Context, id uint32, e ber.Element)
 			}
 		}
 		var result DeleteResult
+		var removed []NamedList
 		for _, n := range names {
 			if n.Scope == AssociationScope {
 				a.mu.Lock()
@@ -289,9 +293,15 @@ func (a *Association) listService(ctx context.Context, id uint32, e ber.Element)
 					if list.Deletable {
 						delete(a.server.lists, n)
 						result.Deleted++
+						removed = append(removed, list)
 					}
 				}
 				a.server.mu.Unlock()
+			}
+		}
+		if a.server.OnListChange != nil {
+			for _, list := range removed {
+				a.server.OnListChange(list, false)
 			}
 		}
 		return success(ber.Encode(0xad, ber.Uint(0x80, uint64(result.Matched)), ber.Uint(0x81, uint64(result.Deleted))))
