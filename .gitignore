@@ -11,6 +11,9 @@
 /tests/
 /test-results/
 /docs/standards/
+# Local development plans: not published with the repository.
+/docs/roadmap.md
+/docs/roadmap.zh-CN.md
 .env
 .env.*
 !.env.example
