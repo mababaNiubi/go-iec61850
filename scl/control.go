@@ -14,11 +14,13 @@ import (
 // category 2 denotes station control. Check bit 0 requests synchrocheck and
 // bit 1 requests interlocking. The application implements those checks.
 type Command struct {
-	Value                              bool
-	OriginCategory                     int
-	OriginID                           []byte
-	Number                             uint8
-	Time                               time.Time
+	Value          bool
+	OriginCategory int
+	OriginID       []byte
+	Number         uint8
+	Time           time.Time
+	// OperTime is the decoded operTm; zero means immediate execution.
+	OperTime                           time.Time
 	Test, SynchroCheck, InterlockCheck bool
 }
 
@@ -110,12 +112,18 @@ func (d *IED) OnControl(name mms.ObjectName, perform func(context.Context, Comma
 	return nil
 }
 
+// operLayout accepts the immediate six-field Oper and the seven-field form
+// that includes operTm (time-activated control).
 func operLayout(t mms.TypeSpec) bool {
-	if t.Kind != mms.KindStructure || len(t.Components) != 6 {
+	if t.Kind != mms.KindStructure || (len(t.Components) != 6 && len(t.Components) != 7) {
 		return false
 	}
-	names := [...]string{"ctlVal", "origin", "ctlNum", "T", "Test", "Check"}
-	kinds := [...]mms.Kind{mms.KindBoolean, mms.KindStructure, mms.KindUnsigned, mms.KindUTC, mms.KindBoolean, mms.KindBitString}
+	names := []string{"ctlVal", "origin", "ctlNum", "T", "Test", "Check"}
+	kinds := []mms.Kind{mms.KindBoolean, mms.KindStructure, mms.KindUnsigned, mms.KindUTC, mms.KindBoolean, mms.KindBitString}
+	if len(t.Components) == 7 {
+		names = []string{"ctlVal", "origin", "ctlNum", "operTm", "T", "Test", "Check"}
+		kinds = []mms.Kind{mms.KindBoolean, mms.KindStructure, mms.KindUnsigned, mms.KindUTC, mms.KindUTC, mms.KindBoolean, mms.KindBitString}
+	}
 	for i, c := range t.Components {
 		if c.Name != names[i] || c.Type.Kind != kinds[i] {
 			return false
@@ -123,13 +131,16 @@ func operLayout(t mms.TypeSpec) bool {
 	}
 	o := t.Components[1].Type.Components
 	return len(o) == 2 && o[0].Name == "orCat" && o[0].Type.Kind == mms.KindInteger && o[1].Name == "orIdent" && o[1].Type.Kind == mms.KindOctetString &&
-		o[1].Type.Length == -64 && t.Components[2].Type.Width == 8 && (t.Components[5].Type.Length == -2 || t.Components[5].Type.Length == 2)
+		o[1].Type.Length == -64 && t.Components[2].Type.Width == 8 && (t.Components[len(t.Components)-1].Type.Length == -2 || t.Components[len(t.Components)-1].Type.Length == 2)
 }
 
 // Write is the MMS access policy. Only an exact, registered whole Oper is
 // dispatched. Writes to its children, ST, MX, CF or their ancestors are denied.
 func (d *IED) Write(ctx context.Context, a mms.VariableAccess, value mms.Value) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := d.remoteAccess(ctx, AccessWrite, a.Name, value); err != nil {
 		return err
 	}
 	if handled, err := d.writeService(ctx, a, value); handled {
@@ -146,28 +157,52 @@ func (d *IED) Write(ctx context.Context, a mms.VariableAccess, value mms.Value) 
 }
 
 // The caller has checked the entire value against an accepted Oper layout.
-func decodeCommand(v mms.Value) (Command, error) {
-	e, _ := v.Elements()
-	o, _ := e[1].Elements()
+// Components are located by name, so both the six- and seven-field forms
+// (with operTm) decode without index arithmetic.
+func decodeCommand(spec mms.TypeSpec, v mms.Value) (Command, error) {
+	e, err := v.Elements()
+	if err != nil || len(e) != len(spec.Components) {
+		return Command{}, mms.ObjectValueInvalid
+	}
+	index := make(map[string]int, len(spec.Components))
+	for i, c := range spec.Components {
+		index[c.Name] = i
+	}
+	o, err := e[index["origin"]].Elements()
+	if err != nil || len(o) != 2 {
+		return Command{}, mms.ObjectValueInvalid
+	}
 	cat, _ := o[0].Int()
 	id, _ := o[1].Bytes()
 	if cat < 0 || cat > 8 {
 		return Command{}, mms.ObjectValueInvalid
 	}
-	on, _ := e[0].Bool()
-	num, _ := e[2].Uint()
-	t, err := e[3].Time()
+	on, _ := e[index["ctlVal"]].Bool()
+	num, _ := e[index["ctlNum"]].Uint()
+	t, err := e[index["T"]].Time()
 	if err != nil {
 		return Command{}, mms.ObjectValueInvalid
 	}
-	test, _ := e[4].Bool()
-	n, _ := e[5].BitLength()
-	flags, _ := e[5].Bytes()
+	var operTime time.Time
+	if i, ok := index["operTm"]; ok {
+		operTime, err = e[i].Time()
+		if err != nil {
+			return Command{}, mms.ObjectValueInvalid
+		}
+		// An all-zero operTm is the IEC "execute immediately" encoding; it
+		// decodes to the Unix epoch, not to the Go zero time.
+		if operTime.Unix() <= 0 {
+			operTime = time.Time{}
+		}
+	}
+	test, _ := e[index["Test"]].Bool()
+	n, _ := e[index["Check"]].BitLength()
+	flags, _ := e[index["Check"]].Bytes()
 	if n != 2 {
 		return Command{}, mms.TypeInconsistent
 	}
-	return Command{Value: on, OriginCategory: int(cat), OriginID: id, Number: uint8(num), Time: t, Test: test,
-		SynchroCheck: flags[0]&0x80 != 0, InterlockCheck: flags[0]&0x40 != 0}, nil
+	return Command{Value: on, OriginCategory: int(cat), OriginID: id, Number: uint8(num), Time: t, OperTime: operTime,
+		Test: test, SynchroCheck: flags[0]&0x80 != 0, InterlockCheck: flags[0]&0x40 != 0}, nil
 }
 
 // Position is the IEC double-point status carried as two bits on the wire.

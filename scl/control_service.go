@@ -124,7 +124,7 @@ func (d *IED) writeControl(ctx context.Context, a mms.VariableAccess, value mms.
 				d.mu.Unlock()
 				return true, mms.ObjectAccessDenied
 			}
-			if h.model == 4 && !sameSelection(h.selection, value) {
+			if h.model == 4 && !sameSelection(d.types[oper], h.selection, value) {
 				d.mu.Unlock()
 				return true, mms.ObjectValueInvalid
 			}
@@ -144,10 +144,17 @@ func (d *IED) writeControl(ctx context.Context, a mms.VariableAccess, value mms.
 	h.owner = nil
 	h.selection = mms.Value{}
 	d.mu.Unlock()
-	cmd, err := decodeCommand(value)
+	cmd, err := decodeCommand(d.types[oper], value)
 	if err != nil {
 		<-h.busy
 		return true, err
+	}
+	// Time-activated execution is defined for enhanced-security control only:
+	// acceptance and completion are separate evidence, so the actuator runs
+	// when operTm is reached and termination follows it.
+	if !cmd.OperTime.IsZero() && h.model < 3 {
+		<-h.busy
+		return true, mms.ObjectAccessUnsupported
 	}
 	if h.model >= 3 {
 		// Acceptance and completion are separate protocol evidence. Reserve
@@ -156,6 +163,17 @@ func (d *IED) writeControl(ctx context.Context, a mms.VariableAccess, value mms.
 			defer func() { <-h.busy }()
 			if sendErr != nil || runCtx.Err() != nil {
 				return
+			}
+			if !cmd.OperTime.IsZero() {
+				if wait := time.Until(cmd.OperTime); wait > 0 {
+					timer := time.NewTimer(wait)
+					defer timer.Stop()
+					select {
+					case <-runCtx.Done():
+						return
+					case <-timer.C:
+					}
+				}
 			}
 			operationErr := h.perform(runCtx, cmd)
 			report := mms.InformationReport{Variables: []mms.VariableAccess{mms.Access(oper)}, Results: []mms.ReadResult{{Value: value}}}
@@ -178,14 +196,20 @@ func (d *IED) writeControl(ctx context.Context, a mms.VariableAccess, value mms.
 	defer func() { <-h.busy }()
 	return true, h.perform(ctx, cmd)
 }
-func sameSelection(selected, command mms.Value) bool {
+
+// sameSelection compares every declared component except the timestamps, which
+// may change between selection and execution. Locating components by name
+// keeps the six- and seven-field Oper layouts equivalent.
+func sameSelection(spec mms.TypeSpec, selected, command mms.Value) bool {
 	s, es := selected.Elements()
 	v, ev := command.Elements()
-	if es != nil || ev != nil || len(s) != 6 || len(v) != 6 {
+	if es != nil || ev != nil || len(s) != len(spec.Components) || len(v) != len(spec.Components) {
 		return false
 	}
-	// The timestamp may change between selection and execution.
-	for _, i := range []int{0, 1, 2, 4, 5} {
+	for i, c := range spec.Components {
+		if c.Name == "T" || c.Name == "operTm" {
+			continue
+		}
 		if !s[i].Equal(v[i]) {
 			return false
 		}

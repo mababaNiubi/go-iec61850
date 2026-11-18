@@ -39,7 +39,12 @@ const (
 // flags. A zero Time uses the local clock; operations are immediate.
 type ControlOptions struct {
 	Test, SynchroCheck, InterlockCheck bool
-	Time                               time.Time // zero uses the local clock; operTm remains immediate
+	Time                               time.Time // zero uses the local clock
+	// OperTime requests time-activated execution through operTm. Zero means
+	// immediate. The peer must declare operTm in its Oper structure; a peer
+	// without it rejects the command or executes immediately, never silently
+	// pretending the time was honored.
+	OperTime time.Time
 }
 
 // ControlResult records protocol evidence, not a physical actuator position.
@@ -159,7 +164,11 @@ func BuildCommand(spec data.TypeSpec, value data.Value, origin Origin, sequence 
 		case "ctlNum":
 			part = data.Unsigned(uint64(sequence))
 		case "operTm":
-			part = data.UTCFromBytes([8]byte{})
+			if options.OperTime.IsZero() {
+				part = data.UTCFromBytes([8]byte{})
+			} else {
+				part = data.UTC(options.OperTime)
+			}
 		case "T":
 			part = data.UTC(options.Time)
 		case "Test":

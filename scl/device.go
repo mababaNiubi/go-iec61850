@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mababaNiubi/go-iec61850/data"
 	"github.com/mababaNiubi/go-iec61850/mms"
@@ -34,6 +35,9 @@ type IED struct {
 	settings      map[string]*settingGroup
 	groupInitial  []groupInitial
 	readOnlyPaths []string
+	// access is lock-free: the policy is consulted while read paths may hold
+	// the model lock, and must be callable without it.
+	access atomic.Pointer[RemoteAccess]
 }
 
 func newIED(s *System, ied, ap string) *IED {
@@ -230,10 +234,47 @@ func (d *IED) Type(ctx context.Context, n mms.ObjectName) (mms.TypeSpec, error) 
 // Read implements mms.Store, including association-specific control/report/settings views.
 // Use ReadBatch for a coherent multi-member acquisition.
 func (d *IED) Read(ctx context.Context, a mms.VariableAccess) (mms.Value, error) {
+	if err := d.remoteAccess(ctx, AccessRead, a.Name, mms.Value{}); err != nil {
+		return mms.Value{}, err
+	}
 	if value, handled, err := d.readService(ctx, a); handled {
 		return value, err
 	}
 	return d.model.Read(ctx, a)
+}
+
+// RemoteAccess decides whether one remote association may read or write an
+// object. Local acquisition (Update) and internal publication never pass
+// through it. A handler returns nil to allow or an error, normally
+// mms.ObjectAccessDenied, to refuse.
+type RemoteAccess func(ctx context.Context, op string, name mms.ObjectName, value mms.Value) error
+
+const (
+	AccessRead  = "read"
+	AccessWrite = "write"
+)
+
+// SetAccessHandler installs the remote read/write policy. Configure it before
+// serving; nil allows everything the model already permits.
+func (d *IED) SetAccessHandler(handler RemoteAccess) {
+	if handler == nil {
+		d.access.Store(nil)
+		return
+	}
+	d.access.Store(&handler)
+}
+
+// remoteAccess applies the policy to remote associations only. Local
+// acquisition and internal publication never reach it.
+func (d *IED) remoteAccess(ctx context.Context, op string, name mms.ObjectName, value mms.Value) error {
+	handler := d.access.Load()
+	if handler == nil || mms.AssociationFromContext(ctx) == nil {
+		return nil
+	}
+	if err := (*handler)(ctx, op, name, value); err != nil {
+		return mms.ObjectAccessDenied
+	}
+	return nil
 }
 
 // ReadSnapshot reads named values under one model lock. It is useful when a
@@ -257,12 +298,22 @@ func (d *IED) ReadSnapshot(ctx context.Context, names ...mms.ObjectName) ([]mms.
 // ReadBatch keeps one acquisition image across all MMS Read members, including
 // alternate access and association-owned services such as SBO and SG/SE.
 func (d *IED) ReadBatch(ctx context.Context, accesses []mms.VariableAccess) []mms.ReadResult {
+	// The policy runs before the model lock so a handler may itself read the
+	// model without deadlocking.
+	denied := make([]error, len(accesses))
+	for i, access := range accesses {
+		denied[i] = d.remoteAccess(ctx, AccessRead, access.Name, mms.Value{})
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	results := make([]mms.ReadResult, len(accesses))
 	for i, access := range accesses {
 		if err := ctx.Err(); err != nil {
 			results[i].Error = err
+			continue
+		}
+		if denied[i] != nil {
+			results[i].Error = denied[i]
 			continue
 		}
 		value, handled, err := d.readAccessServiceLocked(ctx, access)
