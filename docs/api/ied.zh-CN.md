@@ -147,6 +147,19 @@ configured, err := client.ConfigureRCB(ctx, block, ied.RCBConfiguration{DataSet:
 
 `Discover` 用一个预算计量每个请求、解码名称和对象（`MaxObjects`、`MaxRequests`、`MaxBytes`），耗尽时在发出更多工作前停止，设置 `Truncated` 和 `TruncationReason`，并保留已完成结果以便加大预算重跑。`BuildModelTree` 把结果整理成设备 → 逻辑节点 → FC → 点位，不臆造对端未返回的语义。`NewSelectionDocument` + `VerifySelection` 逐点重验证已保存的选点（`ok`、`missing`、`type-changed`），不修改远端状态；未知版本文档显式报错。`Capabilities()` 返回已评审的角色/服务清单——未支持的服务不会在线路上广告。
 
+## 用 TLS 保护传输
+
+`mms.DialTLS` 与 `(*mms.Server).ServeTLS` 把 TLS 放在 TCP 与 ISO 会话之间，ISO、ACSE、MMS 字节完全不变。范围仅限传输层保密性、完整性与可选的证书双向认证——**不包含** IEC 62351-4 端到端安全、ACSE 认证或基于角色的授权。
+
+```go
+policy := mms.TLSPolicy{Certificates: []tls.Certificate{serverCert}, ClientCAs: clients, ClientAuth: tls.RequireAndVerifyClientCert}
+go server.ServeTLS(listener, policy)
+
+client, err := mms.DialTLS(ctx, address, mms.Config{}, mms.TLSPolicy{RootCAs: roots, ServerName: "server.ied.test"})
+```
+
+零值策略不可用是有意设计：服务端必须提供证书，客户端证书校验必须提供 `ClientCAs`。`MinVersion` 默认 TLS 1.2，更低版本直接拒绝。`InsecureSkipVerify` 未同时设置 `AllowInsecure` 时会被拒绝；即便显式开启，事件中的 `Verified` 仍为 false，审计不会把未验证的对端当成已验证。`OnEvent` 收到脱敏事件（不含证书或密钥材料）。明文与安全端点两个方向都不互通——不存在静默降级。TLS 1.3 的密码套件由 Go 运行时固定，`CipherSuites` 只约束 TLS 1.2。
+
 ## 从 SCL 获得 SV 布局，共用一个网卡读取循环
 
 `system.SVStream("MUA/AP1/LD0/MSVCB01")` 返回 `sv.Profile`；`SVStreams(ied, ap)` 枚举该接入点的流，无需先构建 MMS 运行模型。`profile.Layout.Field(member, path)` 按 FCDA 名或序号定位标量，`QualityFor(field)` 查同数据对象的 q。`Field.Decode/Encode` 使用原始 SCL 类型和已检查偏移，包括 SV 中四字节的 Enum、Dbpos、Quality、Check。

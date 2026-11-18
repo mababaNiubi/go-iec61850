@@ -93,17 +93,25 @@ func (s *Server) Serve(listener net.Listener) error {
 			}
 			return err
 		}
-		s.mu.Lock()
-		if s.closed {
-			s.mu.Unlock()
-			raw.Close()
+		if !s.adopt(raw) {
 			return nil
 		}
-		s.raw[raw] = struct{}{}
-		s.wg.Add(1)
-		s.mu.Unlock()
 		go s.serveConnection(raw)
 	}
+}
+
+// adopt registers an accepted socket for shutdown and worker accounting. It
+// reports false, after closing raw, when the server is already closed.
+func (s *Server) adopt(raw net.Conn) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		raw.Close()
+		return false
+	}
+	s.raw[raw] = struct{}{}
+	s.wg.Add(1)
+	return true
 }
 
 // ListenAndServe creates a TCP listener at host:port and delegates its lifetime to Serve.
@@ -180,6 +188,13 @@ func (a *Association) send(data []byte) error {
 func (s *Server) serveConnection(raw net.Conn) {
 	defer s.wg.Done()
 	defer func() { raw.Close(); s.mu.Lock(); delete(s.raw, raw); s.mu.Unlock() }()
+	s.serveSession(raw)
+}
+
+// serveSession runs the ISO/ACSE/MMS association on an established socket.
+// The caller owns socket shutdown and worker accounting, so a TLS transport
+// can hand over the secured connection through the identical protocol path.
+func (s *Server) serveSession(raw net.Conn) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	local := localParameters(s.cfg)

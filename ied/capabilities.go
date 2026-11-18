@@ -55,7 +55,8 @@ func Capabilities() CapabilityMatrix {
 			{Area: "client", Service: "setting group read/edit/confirm/activate", Status: Supported, Package: "ied"},
 			{Area: "client", Service: "MMS files", Status: Unsupported},
 			{Area: "client", Service: "journals, MMS cancel, rename", Status: Unsupported},
-			{Area: "client", Service: "IEC 62351 secure transport/authentication", Status: Unsupported},
+			{Area: "client", Service: "TLS-secured transport (IEC 62351-3 style)", Status: Conditional, Package: "mms", Restriction: "transport confidentiality/integrity and optional mutual certificate authentication only; not IEC 62351-4 end-to-end security, ACSE authentication or role-based authorization"},
+			{Area: "client", Service: "ACSE authentication mechanisms", Status: Unsupported},
 
 			// Modeled server role (scl + simulator).
 			{Area: "server", Service: "typed model read, local ST/MX acquisition", Status: Supported, Package: "scl"},

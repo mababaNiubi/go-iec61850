@@ -131,16 +131,29 @@ func handshakeDeadline(ctx context.Context, raw net.Conn, timeout time.Duration)
 
 // Dial performs COTP and ACSE association and carries the MMS Initiate PDU.
 func Dial(ctx context.Context, address string, cfg Config, initiate []byte) (_ *Conn, response []byte, err error) {
-	cfg, err = normalize(cfg)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(initiate) == 0 || len(initiate) > cfg.MaxPDUSize || len(initiate) > 65000 {
-		return nil, nil, errors.New("iso: invalid initiate size")
-	}
 	raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, nil, err
+	}
+	return DialConn(ctx, raw, cfg, initiate)
+}
+
+// DialConn performs COTP and ACSE association on an already established
+// socket, which lets a caller place a security layer such as TLS underneath
+// without changing any ISO, ACSE or MMS byte. The returned Conn owns raw and
+// closes it on failure.
+func DialConn(ctx context.Context, raw net.Conn, cfg Config, initiate []byte) (_ *Conn, response []byte, err error) {
+	if raw == nil {
+		return nil, nil, errors.New("iso: socket is required")
+	}
+	cfg, err = normalize(cfg)
+	if err != nil {
+		_ = raw.Close()
+		return nil, nil, err
+	}
+	if len(initiate) == 0 || len(initiate) > cfg.MaxPDUSize || len(initiate) > 65000 {
+		_ = raw.Close()
+		return nil, nil, errors.New("iso: invalid initiate size")
 	}
 	success := false
 	defer func() {

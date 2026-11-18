@@ -148,6 +148,19 @@ configured, err := client.ConfigureRCB(ctx, block, ied.RCBConfiguration{DataSet:
 
 `Discover` charges every request, decoded name and object against one budget (`MaxObjects`, `MaxRequests`, `MaxBytes`); exhaustion stops before further work, sets `Truncated` with a `TruncationReason`, and preserves completed results for a re-run with a larger budget. `BuildModelTree` groups a result into device → logical node → FC → point without inventing semantics the peer did not return. `NewSelectionDocument` + `VerifySelection` revalidate a saved selection point by point (`ok`, `missing`, `type-changed`) without modifying remote state; unknown document versions fail explicitly. `Capabilities()` returns the reviewed role/service profile — unsupported services are not advertised on the wire.
 
+## Secure the transport with TLS
+
+`mms.DialTLS` and `(*mms.Server).ServeTLS` place TLS between TCP and the ISO session; no ISO, ACSE or MMS byte changes. Scope is transport confidentiality, integrity and optional mutual certificate authentication — **not** IEC 62351-4 end-to-end security, ACSE authentication or role-based authorization.
+
+```go
+policy := mms.TLSPolicy{Certificates: []tls.Certificate{serverCert}, ClientCAs: clients, ClientAuth: tls.RequireAndVerifyClientCert}
+go server.ServeTLS(listener, policy)
+
+client, err := mms.DialTLS(ctx, address, mms.Config{}, mms.TLSPolicy{RootCAs: roots, ServerName: "server.ied.test"})
+```
+
+The zero policy is unusable by design: a server needs a certificate, and client-certificate verification needs `ClientCAs`. `MinVersion` defaults to TLS 1.2 and lower values are rejected. `InsecureSkipVerify` is refused unless `AllowInsecure` is also set; even then the reported `SecurityEvent.Verified` stays false, so an audit never mistakes an unverified peer for a verified one. `OnEvent` receives redacted observations (no certificate or key material). Plaintext and secured endpoints do not interoperate in either direction — there is no silent downgrade. TLS 1.3 cipher suites are fixed by the Go runtime; `CipherSuites` only restricts TLS 1.2.
+
 ## Import an SV model and share one reader
 
 `system.SVStream("MUA/AP1/LD0/MSVCB01")` returns an `sv.Profile`; `SVStreams(ied, ap)` enumerates that AP's streams without constructing an MMS runtime. `profile.Layout.Field(member, path)` selects a scalar by FCDA item or index. `QualityFor(field)` finds a modeled q in the same data object. `Field.Decode`/`Encode` use checked offsets and original SCL types, including four-octet SV Enum/Dbpos/Quality/Check.

@@ -63,6 +63,13 @@ func Dial(ctx context.Context, address string, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	return newClient(conn, response, cfg, local)
+}
+
+// newClient completes MMS negotiation on an association and starts the
+// receive loop. Transport wrappers such as TLS share this path so negotiation,
+// windowing and shutdown behavior stay identical.
+func newClient(conn *iso.Conn, response []byte, cfg Config, local Parameters) (*Client, error) {
 	peer, err := decodeInitiate(response, 0xa9)
 	if err != nil {
 		conn.Close()
