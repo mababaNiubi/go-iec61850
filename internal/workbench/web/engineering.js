@@ -93,14 +93,133 @@ export function createEngineeringUI({api, state, esc, guard, notify, locale, rea
       '</button><button class="button secondary" id="settings-activate">' + text("Activate existing group", "激活已有组") +
       '</button></div><pre id="online-settings-result" aria-live="polite"></pre></article>';
   }
+  // --- Acquisition workflow (WB-01): bind → read → configure → revalidate ---
+
+  let workflowSelection = [];
+  function workflowPanel() {
+    const sets = directory.DataSets || [];
+    const reports = directory.Reports || [];
+    const points = directory.Objects.filter(o => o.FC === "ST" || o.FC === "MX");
+    return '<div class="stream-grid">' +
+      '<article class="stream-card"><h3>' + text("Dataset bindings", "数据集绑定") + '</h3>' +
+      '<label>' + text("Dataset", "数据集") + '<select id="wf-set">' +
+      sets.map(s => '<option value="' + esc(s.Name.Domain + "|" + s.Name.Item) + '">' + esc(name(s.Name)) + '</option>').join("") +
+      '</select></label><div class="service-actions"><label><input type="checkbox" id="wf-verify" checked> ' +
+      text("Recheck declaration each read", "每次读取复查声明") + '</label>' +
+      '<button class="button primary" id="wf-bind">' + text("Bind", "绑定") + '</button></div>' +
+      '<div id="wf-bindings"></div></article>' +
+      '<article class="stream-card"><h3>' + text("Dynamic dataset", "动态数据集") + '</h3>' +
+      '<label>' + text("New dataset name", "新数据集名") + '<input id="wf-ds-item" placeholder="LLN0$dsDynamic"></label>' +
+      '<label>' + text("Members · one domain$item per line", "成员 · 每行一个 domain$item") +
+      '<textarea id="wf-ds-members" class="value-editor" rows="3">BayIEDCTRL$XCBR1$ST$Pos$stVal</textarea></label>' +
+      '<div class="service-actions"><button class="button primary" id="wf-ds-create">' + text("Create", "创建") + '</button></div></article>' +
+      '<article class="stream-card"><h3>' + text("Report rebind", "报告重绑定") + '</h3>' +
+      '<label>RCB<select id="wf-rcb">' + reports.map(r => '<option value="' + esc(r.Name.Domain + "|" + r.Name.Item) + '">' + esc(name(r.Name)) + '</option>').join("") + '</select></label>' +
+      '<label>' + text("Target dataset item", "目标数据集 item") + '<input id="wf-rcb-set" placeholder="LLN0$dsDynamic"></label>' +
+      '<div class="service-actions"><button class="button primary" id="wf-rcb-apply">' + text("Rebind disabled RCB", "重绑定停用 RCB") + '</button></div>' +
+      '<pre id="wf-rcb-result" aria-live="polite"></pre></article>' +
+      '<article class="stream-card"><h3>' + text("Selection revalidation", "选点重验证") + '</h3>' +
+      '<label>' + text("Point", "点位") + '<select id="wf-point">' +
+      points.map(o => '<option value="' + esc(o.Name.Domain + "|" + o.Name.Item) + '">' + esc(name(o.Name)) + '</option>').join("") +
+      '</select></label><div class="service-actions">' +
+      '<button class="button secondary" id="wf-point-add">' + text("Add", "加入") + '</button>' +
+      '<button class="button primary" id="wf-verify-selection">' + text("Verify against peer", "对照当前设备") + '</button></div>' +
+      '<ul id="wf-points">' + workflowSelection.map((p, i) =>
+        '<li>' + esc(p.Domain + "/" + p.Item) + ' <button class="text-button" data-wf-remove="' + i + '">✕</button></li>').join("") + '</ul>' +
+      '<div id="wf-verify-result"></div></article>' +
+      '</div>';
+  }
+
+  async function renderBindings() {
+    const box = $("#wf-bindings");
+    if (!box) return;
+    const list = await api(endpoint(directoryID, "/bindings"));
+    box.innerHTML = list.length ? list.map(b =>
+      '<div class="rec-play"><strong>' + esc(b.DataSet) + '</strong><small>gen ' + b.GenerationID +
+      ' · ' + b.Members + text(" members · ", " 成员 · ") + (b.EachReadCheck ? text("each-read check", "逐读复查") : text("manual refresh", "手动刷新")) +
+      '</small><button class="button secondary" data-wf-read="' + esc(b.DataSet) + '">' + text("Read", "读取") + '</button>' +
+      '<button class="button secondary" data-wf-unbind="' + esc(b.DataSet) + '">' + text("Unbind", "解绑") + '</button></div>'
+    ).join("") : '<p class="form-note">—</p>';
+    box.querySelectorAll("[data-wf-read]").forEach(button => {
+      button.onclick = guard(async () => {
+        const [domain, item] = button.dataset.wfRead.split("/");
+        const snapshot = await api(endpoint(directoryID, "/bindings/read"), {method:"POST", body:{Domain:domain, Item:item}});
+        notify(text("Generation read: verified=" + snapshot.Verified, "代际读取：verified=" + snapshot.Verified));
+        await renderBindings();
+      });
+    });
+    box.querySelectorAll("[data-wf-unbind]").forEach(button => {
+      button.onclick = guard(async () => {
+        const [domain, item] = button.dataset.wfUnbind.split("/");
+        await api(endpoint(directoryID, "/bindings?domain=" + encodeURIComponent(domain) + "&item=" + encodeURIComponent(item)), {method:"DELETE"});
+        await renderBindings();
+      });
+    });
+  }
+
+  function wireWorkflow() {
+    if ($("#wf-bind")) {
+      $("#wf-bind").onclick = guard(async () => {
+        const [domain, item] = $("#wf-set").value.split("|");
+        await api(endpoint(directoryID, "/bindings"), {method:"POST",
+          body:{Domain:domain, Item:item, VerifyEachRead:$("#wf-verify").checked}});
+        notify(text("Dataset bound", "数据集已绑定"));
+        await renderBindings();
+      });
+    }
+    if ($("#wf-ds-create")) {
+      $("#wf-ds-create").onclick = guard(async () => {
+        const item = $("#wf-ds-item").value.trim();
+        const members = $("#wf-ds-members").value.split("\n").map(l => l.trim()).filter(Boolean)
+          .map(l => { const cut = l.indexOf("$"); return {Domain: cut < 0 ? directory.Domains[0] : l.slice(0, cut), Item: cut < 0 ? l : l.slice(cut + 1)}; });
+        await api(endpoint(directoryID, "/datasets"), {method:"POST", body:{Domain:directory.Domains[0], Item:item, Members:members}});
+        notify(text("Dynamic dataset created", "动态数据集已创建"));
+      });
+    }
+    if ($("#wf-rcb-apply")) {
+      $("#wf-rcb-apply").onclick = guard(async () => {
+        const [domain, item] = $("#wf-rcb").value.split("|");
+        const result = await api(endpoint(directoryID, "/rcb"), {method:"POST",
+          body:{Domain:domain, Item:item, DataSetDomain:domain, DataSetItem:$("#wf-rcb-set").value.trim()}});
+        $("#wf-rcb-result").textContent = JSON.stringify(result.Declaration, null, 2);
+        notify(text("Report control block rebound · ConfRev ", "报告控制块已重绑 · ConfRev ") + result.Declaration.ConfRev);
+      });
+    }
+    if ($("#wf-point-add")) {
+      $("#wf-point-add").onclick = guard(async () => {
+        const [domain, item] = $("#wf-point").value.split("|");
+        const o = directory.Objects.find(x => x.Name.Domain === domain && x.Name.Item === item);
+        if (o && !workflowSelection.some(p => p.domain === domain && p.item === item)) {
+          workflowSelection.push({domain, item, fc:o.FC, type:o.Type, origin:"online"});
+          renderServices();
+        }
+      });
+    }
+    document.querySelectorAll("[data-wf-remove]").forEach(button => {
+      button.onclick = () => { workflowSelection.splice(Number(button.dataset.wfRemove), 1); renderServices(); };
+    });
+    if ($("#wf-verify-selection")) {
+      $("#wf-verify-selection").onclick = guard(async () => {
+        const report = await api(endpoint(directoryID, "/selection/verify"), {method:"POST",
+          body:{Version:"1", Created:new Date().toISOString(), Points:workflowSelection}});
+        $("#wf-verify-result").innerHTML = report.Entries.map(e =>
+          '<p class="' + (e.Status === "ok" ? "" : "service-error") + '">' + esc(e.Reference) + " · " + esc(e.Status) +
+          (e.Detail ? " · " + esc(e.Detail) : "") + "</p>").join("");
+      });
+    }
+    renderBindings().catch(() => {});
+  }
+
   function renderServices() {
     const box = $("#online-services");
     if (!directory || directoryID !== selectedConnection()) { box.innerHTML = ""; return; }
     const diagnostics = directory.Diagnostics.map(d => '<p class="service-error">' + esc(d.Reference + " · " + d.Message) + '</p>').join("");
     box.innerHTML = diagnostics + '<div class="stream-grid">' + reportCards() + controlPanel() + settingsPanel() + '</div>' +
+      workflowPanel() +
       '<details class="stream-card"><summary>' + text("Online object directory", "在线对象目录") + '</summary><div class="remote-names">' +
       directory.Objects.map((o, i) => '<button data-online-object="' + i + '">' + esc(name(o.Name)) + '</button>').join("") +
       '</div></details>';
+    wireWorkflow();
     box.querySelectorAll("[data-report]").forEach(button => {
       button.onclick = guard(async () => {
         const block = directory.Reports[Number(button.dataset.index)];

@@ -24,6 +24,7 @@ type connection struct {
 	services      *ied.Client
 	mu            sync.Mutex
 	subscriptions map[mms.ObjectName]*ied.ReportSubscription
+	bindings      map[mms.ObjectName]*ied.DataSetBinding
 	operations    sync.Mutex // user control/setting actions, separate from report delivery
 	selections    map[string]*ied.Selection
 	records       []ReportRecord
@@ -105,6 +106,7 @@ func (m *Manager) Disconnect(id string) error {
 	if c == nil {
 		return ErrNotFound
 	}
+	c.closeBindings()
 	c.services.Close()
 	m.log.add("client.disconnect", id, "MMS association closed")
 	return nil

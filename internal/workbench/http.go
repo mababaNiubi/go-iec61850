@@ -259,6 +259,66 @@ func (m *Manager) Handler() http.Handler {
 		after, _ := strconv.ParseUint(r.URL.Query().Get("after"), 10, 64)
 		writeJSON(w, 200, m.ControlHistory(after))
 	})
+	mux.HandleFunc("GET /api/connections/{id}/bindings", func(w http.ResponseWriter, r *http.Request) {
+		v, e := m.RemoteBindings(r.PathValue("id"))
+		respond(w, v, e)
+	})
+	mux.HandleFunc("POST /api/connections/{id}/bindings", func(w http.ResponseWriter, r *http.Request) {
+		var q struct {
+			Domain, Item   string
+			VerifyEachRead bool
+		}
+		if !decode(w, r, &q) {
+			return
+		}
+		v, e := m.BindRemote(r.Context(), r.PathValue("id"), q.Domain, q.Item, q.VerifyEachRead)
+		respond(w, v, e)
+	})
+	mux.HandleFunc("POST /api/connections/{id}/bindings/read", func(w http.ResponseWriter, r *http.Request) {
+		var q struct{ Domain, Item string }
+		if !decode(w, r, &q) {
+			return
+		}
+		v, e := m.ReadRemoteBinding(r.Context(), r.PathValue("id"), q.Domain, q.Item)
+		respond(w, v, e)
+	})
+	mux.HandleFunc("DELETE /api/connections/{id}/bindings", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, map[string]bool{"ok": true}, m.UnbindRemote(r.PathValue("id"), r.URL.Query().Get("domain"), r.URL.Query().Get("item")))
+	})
+	mux.HandleFunc("POST /api/connections/{id}/datasets", func(w http.ResponseWriter, r *http.Request) {
+		var q struct {
+			Domain, Item string
+			Members      []MemberAccess
+		}
+		if !decode(w, r, &q) {
+			return
+		}
+		respond(w, map[string]bool{"ok": true}, m.CreateRemoteDataSet(r.Context(), r.PathValue("id"), q.Domain, q.Item, q.Members))
+	})
+	mux.HandleFunc("DELETE /api/connections/{id}/datasets", func(w http.ResponseWriter, r *http.Request) {
+		v, e := m.DeleteRemoteDataSet(r.Context(), r.PathValue("id"), r.URL.Query().Get("domain"), r.URL.Query().Get("item"))
+		respond(w, v, e)
+	})
+	mux.HandleFunc("POST /api/connections/{id}/rcb", func(w http.ResponseWriter, r *http.Request) {
+		var q struct {
+			Domain, Item               string
+			DataSetDomain, DataSetItem string
+			RptID                      string
+		}
+		if !decode(w, r, &q) {
+			return
+		}
+		v, e := m.ConfigureRemoteRCB(r.Context(), r.PathValue("id"), q.Domain, q.Item, q.DataSetDomain, q.DataSetItem, q.RptID)
+		respond(w, v, e)
+	})
+	mux.HandleFunc("POST /api/connections/{id}/selection/verify", func(w http.ResponseWriter, r *http.Request) {
+		var q ied.SelectionDocument
+		if !decode(w, r, &q) {
+			return
+		}
+		v, e := m.VerifyRemoteSelection(r.Context(), r.PathValue("id"), q)
+		respond(w, v, e)
+	})
 	mux.HandleFunc("GET /api/events", m.eventStream)
 	files, _ := fs.Sub(webFiles, "web")
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {

@@ -60,7 +60,7 @@ func Capabilities() CapabilityMatrix {
 			// Modeled server role (scl + simulator).
 			{Area: "server", Service: "typed model read, local ST/MX acquisition", Status: Supported, Package: "scl"},
 			{Area: "server", Service: "URCB/BRCB with buffering, segmentation and EntryID resume", Status: Supported, Package: "scl"},
-			{Area: "server", Service: "RCB online field writes", Status: Conditional, Package: "scl", Restriction: "limited by SCL ReportSettings Fix/Conf/Dyn; binding dynamically created lists arrives with DS-02"},
+			{Area: "server", Service: "RCB online field writes", Status: Conditional, Package: "scl", Restriction: "limited by SCL ReportSettings Fix/Conf/Dyn; dynamically created domain lists can be bound (DS-02)"},
 			{Area: "server", Service: "SPC/DPC controls with virtual actuator callbacks", Status: Supported, Package: "scl"},
 			{Area: "server", Service: "setting groups with edit reservations", Status: Supported, Package: "scl"},
 			{Area: "server", Service: "additional CDC control models", Status: Unsupported},

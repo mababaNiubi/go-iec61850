@@ -126,6 +126,11 @@ The API uses JSON except for raw SCL uploads. Successful responses contain the r
 | `GET /api/recordings` / `GET /api/recordings/{id}` | List or inspect imported captures |
 | `DELETE /api/recordings/{id}` | Delete, stopping playback that still reads it |
 | `GET /api/controls?after=0` | Structured control history (`control.record` events) |
+| `POST /api/connections/{id}/bindings` | Bind `{"Domain":"…","Item":"LLN0$dsPos","VerifyEachRead":true}`; `GET` lists, `POST …/bindings/read` acquires through the generation, `DELETE` closes |
+| `POST /api/connections/{id}/datasets` | Create a dynamic dataset `{"Domain":"…","Item":"LLN0$dsDyn","Members":[{"Domain":"…","Item":"XCBR1$ST$Pos$stVal"}]}` |
+| `DELETE /api/connections/{id}/datasets?domain=…&item=…` | Delete a remotely deletable list |
+| `POST /api/connections/{id}/rcb` | Rebind a disabled RCB: `{"Domain":"…","Item":"LLN0$RP$events01","DataSetDomain":"…","DataSetItem":"LLN0$dsDyn","RptID":""}`; the peer bumps ConfRev |
+| `POST /api/connections/{id}/selection/verify` | Revalidate a selection document; per-point ok/missing/type-changed |
 
 Control and setting operations preserve partial protocol evidence in a normal JSON reply: inspect both `result` and `error`, even for HTTP 200. `Acknowledged` is not physical feedback. When operating a saved selection, the selected value/options are reused. Paths and datasets above are examples; discover or inspect the actual target before submitting.
 

@@ -121,6 +121,11 @@ flowchart LR
 | `GET /api/recordings` / `GET /api/recordings/{id}` | 列出或查看已导入录波 |
 | `DELETE /api/recordings/{id}` | 删除录波，同时停止依赖它的回放任务 |
 | `GET /api/controls?after=0` | 结构化控制历史（`control.record` 事件） |
+| `POST /api/connections/{id}/bindings` | 绑定 `{"Domain":"…","Item":"LLN0$dsPos","VerifyEachRead":true}`；`GET` 列表，`POST …/bindings/read` 按代际读取，`DELETE` 解绑 |
+| `POST /api/connections/{id}/datasets` | 创建动态数据集 `{"Domain":"…","Item":"LLN0$dsDyn","Members":[{"Domain":"…","Item":"XCBR1$ST$Pos$stVal"}]}` |
+| `DELETE /api/connections/{id}/datasets?domain=…&item=…` | 删除远端可删除的列表 |
+| `POST /api/connections/{id}/rcb` | 重绑定停用的 RCB：`{"Domain":"…","Item":"LLN0$RP$events01","DataSetDomain":"…","DataSetItem":"LLN0$dsDyn","RptID":""}`；由对端递增 ConfRev |
+| `POST /api/connections/{id}/selection/verify` | 重验证选点文档；逐点返回 ok/missing/type-changed |
 
 控制和定值操作会在正常 JSON 响应中保留部分成功证据；即使 HTTP 200，也要检查 `result` 和 `error`。Acknowledged 不代表物理反馈。操作已保存的选择时复用选择阶段的值和选项。表中路径只是示例，提交前应发现或检查目标的真实声明。
 
